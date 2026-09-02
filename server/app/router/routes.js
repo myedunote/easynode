@@ -13,10 +13,10 @@ import { getAIConfig, saveAIConfig, getAIModels, updateAIPreferences } from '../
 import { getAgentSessions, getAgentSessionDetail, updateAgentSession, forkAgentSession, removeAgentSession, clearAgentSessions, editAgentSessionMessage } from '../controller/agent-session.js'
 import { getAgentMcpServers, addAgentMcpServer, editAgentMcpServer, removeAgentMcpServer, testAgentMcpConnection, discoverAgentMcpServer } from '../controller/agent-mcp.js'
 import { getProxyList, addProxy, updateProxy, removeProxy } from '../controller/proxy.js'
-import { getTerminalConfig, saveTerminalConfig } from '../controller/terminal-config.js'
 import { getServerListConfig, saveServerListConfig } from '../controller/server-list-config.js'
 import { getSuspendedSessions, getTerminalSessionConfig, updateTerminalSessionConfig } from '../controller/terminal.js'
 import { getNativeSshConnection } from '../controller/native.js'
+import terminalSettingsRoutes from './modules/terminal-settings.js'
 
 const ssh = [
   {
@@ -434,19 +434,6 @@ const proxy = [
   }
 ]
 
-const terminalConfig = [
-  {
-    method: 'get',
-    path: '/terminal-config',
-    controller: getTerminalConfig
-  },
-  {
-    method: 'post',
-    path: '/terminal-config',
-    controller: saveTerminalConfig
-  }
-]
-
 const serverListConfig = [
   {
     method: 'get',
@@ -508,7 +495,7 @@ export default [].concat(
   aiConfig,
   agentMcp,
   proxy,
-  terminalConfig,
+  terminalSettingsRoutes,
   serverListConfig,
   terminal,
   native,

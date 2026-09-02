@@ -60,18 +60,18 @@ import { computed, getCurrentInstance } from 'vue'
 const { proxy: { $store } } = getCurrentInstance()
 
 const autoReconnect = computed({
-  get: () => $store.terminalConfig.autoReconnect,
-  set: (newVal) => $store.setTerminalSetting({ autoReconnect: newVal })
+  get: () => $store.terminalSettings.behavior.autoReconnect,
+  set: (newVal) => $store.setTerminalBehavior({ autoReconnect: newVal })
 })
 
 const autoExecuteScript = computed({
-  get: () => $store.terminalConfig.autoExecuteScript,
-  set: (newVal) => $store.setTerminalSetting({ autoExecuteScript: newVal })
+  get: () => $store.terminalSettings.behavior.autoExecuteScript,
+  set: (newVal) => $store.setTerminalBehavior({ autoExecuteScript: newVal })
 })
 
 const autoShowContextMenu = computed({
-  get: () => $store.terminalConfig.autoShowContextMenu,
-  set: (newVal) => $store.setTerminalSetting({ autoShowContextMenu: newVal })
+  get: () => $store.terminalSettings.behavior.autoShowContextMenu,
+  set: (newVal) => $store.setTerminalBehavior({ autoShowContextMenu: newVal })
 })
 
 </script>

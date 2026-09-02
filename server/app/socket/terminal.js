@@ -20,6 +20,13 @@ const currentDir = dirname(fileURLToPath(import.meta.url))
 const AI_COMMAND_TIMEOUT_MS = 60 * 60 * 1000
 const AI_COMMAND_OUTPUT_LIMIT = 256 * 1024
 
+function normalizeTerminalSize(size = {}) {
+  return {
+    rows: Math.max(2, Math.min(500, Number.parseInt(size.rows, 10) || 24)),
+    cols: Math.max(2, Math.min(1000, Number.parseInt(size.cols, 10) || 80))
+  }
+}
+
 function buildAiCommandEnvelope(command, token) {
   const encoded = Buffer.from(command, 'utf8').toString('base64')
   const begin = `${ token }:begin`
@@ -201,7 +208,7 @@ async function getConnectionOptions(hostId) {
   }
 }
 
-function createInteractiveShell(socket, targetSSHClient) {
+function createInteractiveShell(socket, targetSSHClient, terminalSize = {}) {
   return new Promise((resolve, reject) => {
     // 检查SSH客户端连接状态
     if (!targetSSHClient || !targetSSHClient._sock || !targetSSHClient._sock.writable) {
@@ -212,7 +219,11 @@ function createInteractiveShell(socket, targetSSHClient) {
     }
 
     try {
-      targetSSHClient.shell({ term: 'xterm-color' }, (err, stream) => {
+      targetSSHClient.shell({
+        term: 'xterm-color',
+        rows: terminalSize.rows,
+        cols: terminalSize.cols
+      }, (err, stream) => {
         if (err) {
           logger.error('创建交互式终端失败:', err.message)
           socket.emit('terminal_connect_fail', err.message)
@@ -351,7 +362,7 @@ async function handleProxyAndJumpHostConnection(options) {
   }
 }
 
-async function createTerminal(hostId, socket, targetSSHClient, isInteractiveShell = true) {
+async function createTerminal(hostId, socket, targetSSHClient, isInteractiveShell = true, terminalSize = {}) {
   logger.info(`准备创建${ isInteractiveShell ? '交互式' : '非交互式' }终端：${ hostId }`)
   return new Promise(async (resolve) => {
     const targetHostInfo = await hostListDB.findOneAsync({ _id: hostId })
@@ -390,7 +401,7 @@ async function createTerminal(hostId, socket, targetSSHClient, isInteractiveShel
             socket.emit('terminal_connect_success', `终端连接成功：${ host }`)
 
             try {
-              let stream = await createInteractiveShell(socket, targetSSHClient)
+              let stream = await createInteractiveShell(socket, targetSSHClient, terminalSize)
               // 返回连接配置，用于会话重连
               resolve({ stream, jumpSshClients, connectionOptions: targetConnectionOptions })
             } catch (shellError) {
@@ -469,7 +480,8 @@ function resumeSession(socket, session) {
   }
 
   const resizeShell = ({ rows, cols }) => {
-    stream?.setWindow(rows, cols)
+    const size = normalizeTerminalSize({ rows, cols })
+    stream?.setWindow(size.rows, size.cols)
   }
 
   socket.on('input', listenerInput)
@@ -499,8 +511,9 @@ function createServerIo(serverIo) {
 
     const { _id: userId } = await keyDB.findOneAsync({})
     // 处理终端连接请求
-    socket.on('ws_terminal', async ({ hostId, forceNew = false, resumeSessionId = null }) => {
+    socket.on('ws_terminal', async ({ hostId, forceNew = false, resumeSessionId = null, rows, cols }) => {
       try {
+        const terminalSize = normalizeTerminalSize({ rows, cols })
         // 如果指定了resumeSessionId，尝试恢复该会话
         if (resumeSessionId) {
           const session = sessionManager.getSession(resumeSessionId)
@@ -535,7 +548,7 @@ function createServerIo(serverIo) {
 
         // 创建新连接
         const targetSSHClient = new SSHClient()
-        let result = await createTerminal(hostId, socket, targetSSHClient, true)
+        let result = await createTerminal(hostId, socket, targetSSHClient, true, terminalSize)
 
         // 如果创建终端失败，result可能为undefined
         if (!result) {
@@ -571,7 +584,8 @@ function createServerIo(serverIo) {
         }
 
         const resizeShell = ({ rows, cols }) => {
-          stream?.setWindow(rows, cols)
+          const size = normalizeTerminalSize({ rows, cols })
+          stream?.setWindow(size.rows, size.cols)
         }
 
         socket.on('input', listenerInput)

@@ -1,5 +1,6 @@
 <template>
   <div ref="containerRef" class="single_window_container">
+    <TerminalWorkspaceBackground />
     <div
       v-if="isPlusActive"
       class="terminal_panels_wrapper"
@@ -108,6 +109,7 @@ import Terminal from './terminal.vue'
 import { terminalStatusList, terminalStatus } from '@/utils/enum'
 import ScriptInput from './script-input.vue'
 import PlusLimitTip from '@/components/common/PlusLimitTip.vue'
+import TerminalWorkspaceBackground from './terminal-workspace-background.vue'
 import { useContextMenu } from '@/composables/useContextMenu'
 import { useTerminalTabContextMenu } from '@/composables/useTerminalTabContextMenu'
 
@@ -989,6 +991,7 @@ defineExpose({
   width: 100%;
   height: 100%;
   position: relative;
+  z-index: 1;
   overflow: auto; /* 允许滚动 */
 
   &.scroll_mode {
@@ -1015,6 +1018,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   min-height: 250px; /* 设置最小高度250px，确保终端有足够空间 */
+  background: transparent;
 
   &.active {
     border-color: var(--el-color-primary);

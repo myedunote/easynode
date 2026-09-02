@@ -249,12 +249,20 @@ export default {
   removeProxy(id) {
     return axios({ url: `/proxy/${ id }`, method: 'delete' })
   },
-  // 终端配置相关API
-  getTerminalConfig(params = {}) {
-    return axios({ url: '/terminal-config', method: 'get', params })
+  // 终端设置
+  getTerminalSettings(params = {}) {
+    return axios({ url: '/terminal-settings', method: 'get', params })
   },
-  saveTerminalConfig(data) {
-    return axios({ url: '/terminal-config', method: 'post', data })
+  saveTerminalSettings(data) {
+    return axios({ url: '/terminal-settings', method: 'put', data })
+  },
+  uploadTerminalBackground(file) {
+    const data = new FormData()
+    data.append('file', file)
+    return axios({ url: '/terminal-settings/background', method: 'post', data })
+  },
+  getTerminalBackground(assetId) {
+    return axios({ url: `/terminal-settings/background/${ assetId }`, method: 'get', responseType: 'blob' })
   },
   // 服务器列表配置相关API
   getServerListConfig(params = {}) {

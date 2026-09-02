@@ -4,7 +4,9 @@
     title="终端设置"
     class="terminal_settings_dialog"
     :width="dialogWidth"
-    :draggable="!isMobileScreen"
+    :top="dialogTop"
+    draggable
+    overflow
     :close-on-click-modal="false"
     destroy-on-close
   >
@@ -22,15 +24,17 @@
           :name="tab.name"
           :lazy="tab.lazy"
         >
-          <section class="terminal_setting_page">
-            <header class="terminal_setting_page_header">
-              <h2>{{ tab.title }}</h2>
-              <p>{{ tab.description }}</p>
-            </header>
-            <div class="terminal_setting_page_content">
-              <component :is="tab.component" />
-            </div>
-          </section>
+          <div :ref="element => setSettingScrollRef(tab.name, element)" class="terminal_setting_scroll">
+            <section class="terminal_setting_page">
+              <header class="terminal_setting_page_header">
+                <h2>{{ tab.title }}</h2>
+                <p>{{ tab.description }}</p>
+              </header>
+              <div class="terminal_setting_page_content">
+                <component :is="tab.component" />
+              </div>
+            </section>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -59,6 +63,7 @@ const props = defineProps({
 const emit = defineEmits(['update:show',])
 const { isMobileScreen } = useMobileWidth()
 const activeTab = ref('basic')
+const settingScrollRefs = {}
 
 const settingTabs = [
   {
@@ -100,27 +105,42 @@ const visible = computed({
   set: (value) => emit('update:show', value)
 })
 
-const dialogWidth = computed(() => isMobileScreen.value ? '96%' : '900px')
+const dialogWidth = computed(() => isMobileScreen.value ? '96%' : 'min(1240px, 96%)')
+const dialogTop = computed(() => isMobileScreen.value ? '8px' : 'clamp(12px, 4vh, 48px)')
+
+const setSettingScrollRef = (name, element) => {
+  if (element) {
+    settingScrollRefs[name] = element
+  } else {
+    delete settingScrollRefs[name]
+  }
+}
 
 const handleTabChange = () => {
   nextTick(() => {
-    document.querySelector('.terminal_settings_dialog .el-tabs__content')?.scrollTo({ top: 0 })
+    settingScrollRefs[activeTab.value]?.scrollTo({ top: 0 })
   })
 }
 </script>
 
 <style lang="scss" scoped>
 .terminal_settings_container {
-  height: min(68vh, 680px);
-  min-height: 480px;
+  display: flex;
+  height: min(74vh, 740px);
+  min-height: 0;
   overflow: hidden;
 }
 
 .terminal_settings_tabs {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
   height: 100%;
 
   > :deep(.el-tabs__header.is-left) {
     width: 148px;
+    flex: 0 0 148px;
     margin-right: 24px;
     padding: 8px;
     box-sizing: border-box;
@@ -156,13 +176,42 @@ const handleTabChange = () => {
   }
 
   > :deep(.el-tabs__content) {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
     height: 100%;
-    padding-right: 4px;
-    overflow: auto;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  > :deep(.el-tabs__content > .el-tab-pane) {
+    height: 100%;
+    min-height: 0;
   }
 }
 
+.terminal_setting_scroll {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 8px 48px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: 48px;
+  scrollbar-gutter: stable;
+}
+
+.terminal_setting_scroll::-webkit-scrollbar { width: 8px; }
+
+.terminal_setting_scroll::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: var(--el-border-color);
+}
+
 .terminal_setting_page {
+  min-width: 0;
   padding: 2px 0 20px;
 }
 
@@ -229,9 +278,11 @@ const handleTabChange = () => {
 
     > :deep(.el-tabs__content) {
       flex: 1;
-      padding-right: 0;
+      min-height: 0;
     }
   }
+
+  .terminal_setting_scroll { padding-right: 0; }
 
   .terminal_setting_page_header h2 {
     font-size: 20px;
@@ -255,7 +306,9 @@ const handleTabChange = () => {
   }
 
   .el-dialog__body {
+    min-height: 0;
     padding: 20px;
+    overflow: hidden;
   }
 
   .el-dialog__footer {

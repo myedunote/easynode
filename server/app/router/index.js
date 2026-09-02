@@ -6,8 +6,8 @@ import routeList from './routes.js'
 
 // 统一注册路由
 routeList.forEach(item => {
-  const { method, path, controller } = item
-  router[method](path, controller)
+  const { method, path, controller, middlewares = [] } = item
+  router[method](path, ...middlewares, controller)
 })
 
 export default router

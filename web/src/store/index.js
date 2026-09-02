@@ -2,6 +2,9 @@ import { defineStore, acceptHMRUpdate } from 'pinia'
 import dayjs from 'dayjs'
 import $api from '@/api'
 import { isValidDate } from '@/utils'
+import { cloneTerminalSettings, createDefaultTerminalSettings } from '@/utils/terminal-settings'
+
+let terminalSettingsSaveQueue = Promise.resolve()
 
 const useStore = defineStore('global', {
   state: () => ({
@@ -18,37 +21,8 @@ const useStore = defineStore('global', {
     deviceId: localStorage.getItem('deviceId') || null,
     isDark: false,
     menuCollapse: localStorage.getItem('menuCollapse') === 'true',
-    defaultBackgroundImages: [
-      'linear-gradient(-225deg, #CBBACC 0%, #2580B3 100%)',
-      'linear-gradient(to top, #a18cd1 0%, #fbc2eb 100%)',
-      'linear-gradient(to top, #6a85b6 0%, #bac8e0 100%)',
-      'linear-gradient(to top, #7028e4 0%, #e5b2ca 100%)',
-      'linear-gradient(to top, #9be15d 0%, #00e3ae 100%)',
-      'linear-gradient(60deg, #abecd6 0%, #fbed96 100%)',
-      'linear-gradient(-20deg, #2b5876 0%, #4e4376 100%)',
-      'linear-gradient(to top, #1e3c72 0%, #1e3c72 1%, #2a5298 100%)',
-      'linear-gradient(to right, #243949 0%, #517fa4 100%)',
-
-      // 深色背景
-      'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)', // 深蓝紫
-      'linear-gradient(to right, #1a1a2e 0%, #16213e 100%)', // 深夜蓝
-      'linear-gradient(to right, #0f2027 0%, #203a43 50%, #2c5364 100%)', // 深青蓝
-      'linear-gradient(135deg, #141e30 0%, #243b55 100%)', // 深靛蓝
-      'linear-gradient(to bottom, #000000 0%, #2c2c2c 100%)', // 纯黑到灰
-      'linear-gradient(135deg, #2c1810 0%, #3d2817 100%)', // 深褐
-      'linear-gradient(to bottom, #1e3a2e 0%, #0f2922 100%)', // 深绿
-      'linear-gradient(to right, #2b1b3d 0%, #3a2449 100%)', // 深紫
-
-      // 浅色背景
-      'linear-gradient(120deg, #ffffff 0%, #f5f5f5 100%)', // 纯白
-      'linear-gradient(120deg, #faf8f3 0%, #f0ebe1 100%)', // 柔和浅米白
-      'linear-gradient(120deg, #d4e4f7 0%, #b5d3e7 100%)', // 柔和浅蓝
-      'linear-gradient(to top, #e8dff5 0%, #d5c6e0 100%)', // 柔和浅紫
-      'linear-gradient(135deg, #e8d5c4 0%, #d4c4b0 100%)', // 柔和浅褐
-      'linear-gradient(120deg, #d5e5d5 0%, #c8dcc8 100%)', // 柔和浅绿
-    ],
-    // 终端配置占位
-    terminalConfig: {},
+    terminalSettings: createDefaultTerminalSettings(),
+    terminalAppearanceDraft: null,
     // 服务器列表配置
     serverListConfig: {
       columnSettings: {
@@ -79,6 +53,15 @@ const useStore = defineStore('global', {
     aiConfig: { ui: { petEnabled: true } },
     aiConfigLoaded: false
   }),
+  getters: {
+    effectiveTerminalSettings(state) {
+      if (!state.terminalAppearanceDraft) return state.terminalSettings
+      return {
+        ...state.terminalSettings,
+        appearance: state.terminalAppearanceDraft
+      }
+    }
+  },
   actions: {
     async setJwtToken(token) {
       localStorage.setItem('token', token)
@@ -117,7 +100,7 @@ const useStore = defineStore('global', {
         this.getScriptGroupList(),
         this.getPlusInfo(),
         this.getProxyList(),
-        this.getTerminalConfig(),
+        this.getTerminalSettings(),
         this.getServerListConfig(),
       ])
     },
@@ -201,14 +184,52 @@ const useStore = defineStore('global', {
       this.$patch({ plusInfo })
       this.$patch({ isPlusActive: Boolean(plusInfo?.active) })
     },
-    async getTerminalConfig() {
-      const { data: terminalConfig } = await $api.getTerminalConfig()
-      this.$patch({ terminalConfig })
+    async getTerminalSettings() {
+      const { data: terminalSettings } = await $api.getTerminalSettings()
+      this.$patch({ terminalSettings })
     },
-    async setTerminalSetting(setTarget = {}) {
-      const newConfig = { ...this.terminalConfig, ...setTarget }
-      await $api.saveTerminalConfig(newConfig)
-      this.$patch({ terminalConfig: newConfig })
+    async persistTerminalSettings(nextSettings) {
+      const { data: savedSettings } = await $api.saveTerminalSettings(cloneTerminalSettings(nextSettings))
+      this.$patch({ terminalSettings: savedSettings })
+      return savedSettings
+    },
+    async saveTerminalSettings(nextSettings) {
+      const request = () => this.persistTerminalSettings(nextSettings)
+      terminalSettingsSaveQueue = terminalSettingsSaveQueue.then(request, request)
+      return terminalSettingsSaveQueue
+    },
+    async setTerminalAppearance(appearance) {
+      const request = () => {
+        const nextSettings = cloneTerminalSettings(this.terminalSettings)
+        nextSettings.appearance = JSON.parse(JSON.stringify(appearance))
+        return this.persistTerminalSettings(nextSettings)
+      }
+      terminalSettingsSaveQueue = terminalSettingsSaveQueue.then(request, request)
+      return terminalSettingsSaveQueue
+    },
+    setTerminalAppearanceDraft(appearance) {
+      this.$patch({ terminalAppearanceDraft: JSON.parse(JSON.stringify(appearance)) })
+    },
+    clearTerminalAppearanceDraft() {
+      this.$patch({ terminalAppearanceDraft: null })
+    },
+    async setTerminalHighlighting(setTarget = {}) {
+      const request = () => {
+        const nextSettings = cloneTerminalSettings(this.terminalSettings)
+        nextSettings.highlighting = { ...nextSettings.highlighting, ...setTarget }
+        return this.persistTerminalSettings(nextSettings)
+      }
+      terminalSettingsSaveQueue = terminalSettingsSaveQueue.then(request, request)
+      return terminalSettingsSaveQueue
+    },
+    async setTerminalBehavior(setTarget = {}) {
+      const request = () => {
+        const nextSettings = cloneTerminalSettings(this.terminalSettings)
+        nextSettings.behavior = { ...nextSettings.behavior, ...setTarget }
+        return this.persistTerminalSettings(nextSettings)
+      }
+      terminalSettingsSaveQueue = terminalSettingsSaveQueue.then(request, request)
+      return terminalSettingsSaveQueue
     },
     async getServerListConfig() {
       const { data: serverListConfig } = await $api.getServerListConfig()

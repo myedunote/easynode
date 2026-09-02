@@ -329,6 +329,7 @@
               class="tab_content_main_terminals"
               :class="getSplitContainerClass(item.key)"
             >
+              <TerminalWorkspaceBackground v-if="isActiveTerminalTab(index)" />
               <template v-for="panelIndex in getTerminalCount(item.key)" :key="`${item.key}-${panelIndex}`">
                 <div
                   class="terminal_item"
@@ -488,6 +489,7 @@ import TerminalSingleWindow from './terminal-single-window.vue'
 import Docker from './docker.vue'
 import TerminalSessionSetting from './terminal-session-setting.vue'
 import TerminalAiChat from './terminal-ai-chat.vue'
+import TerminalWorkspaceBackground from './terminal-workspace-background.vue'
 
 const {
   proxy: { $nextTick, $store, $message }
@@ -509,6 +511,7 @@ const pingData = ref({})
 const terminalRefs = ref([])
 // const sftpRefs = ref([])
 const activeTabIndex = ref(0)
+const isActiveTerminalTab = index => Number(activeTabIndex.value) === Number(index)
 const isSyncAllSession = ref(false)
 const isSingleWindowMode = ref(isMobileScreen.value ? false : localStorage.getItem('isSingleWindowMode') === 'true')
 const layoutMode = ref(localStorage.getItem('terminalLayoutMode') || 'grid')
@@ -1528,6 +1531,8 @@ onUnmounted(() => {
           z-index: 1;
           .terminal_item {
             box-sizing: border-box;
+            position: relative;
+            z-index: 1;
           }
           &.single_split {
             flex-direction: row;

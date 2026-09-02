@@ -1,593 +1,499 @@
-/**
- * 终端高亮器和默认的规则定义
- */
-
-// ANSI终端文字样式
-export const TEXT_STYLES = {
-  BOLD: '\x1b[1m', // 粗体/高亮
-  ITALIC: '\x1b[3m', // 斜体
-  UNDERLINE: '\x1b[4m', // 下划线
-  RESET: '\x1b[0m' // 重置样式
+const themeForegroundCodes = {
+  black: 30,
+  red: 31,
+  green: 32,
+  yellow: 33,
+  blue: 34,
+  magenta: 35,
+  cyan: 36,
+  white: 37,
+  brightBlack: 90,
+  brightRed: 91,
+  brightGreen: 92,
+  brightYellow: 93,
+  brightBlue: 94,
+  brightMagenta: 95,
+  brightCyan: 96,
+  brightWhite: 97
 }
 
-// 默认颜色映射
-export const DEFAULT_COLOR_MAPPING = {
-  rule1: '#ff4d4f', // 错误
-  rule2: '#fadb14', // 警告
-  rule3: '#52c41a', // 成功
-  rule4: '#13c2c2', // 信息
-  rule5: '#eb2f96', // 网络
-  rule6: '#1890ff', // 链接
-  rule7: '#ffffff', // 日期时间
-  rule8: '#8b5cf6' // 单位数据
-}
+export const ANSI_THEME_TOKENS = Object.keys(themeForegroundCodes)
+export const HIGHLIGHT_PRESET_ID = 'builtin:standard'
+export const HIGHLIGHT_PRESET_VERSION = 2
+export const MAX_HIGHLIGHT_RULES = 50
+export const MAX_HIGHLIGHT_PATTERN_LENGTH = 4096
 
-// 按颜色分组的高亮规则
-export const HIGHLIGHT_RULES = {
-  // 规则1 - 错误类关键词
-  rule1: {
-    title: '错误类关键词',
-    pattern: /\b(?:errors?|err|fail(?:ed|ure)?|fatal|critical|denied|refused|broken|crash(?:ed)?|exception|timeout|abort(?:ed)?|reject(?:ed)?|forbidden|unauthorized|conflict|corrupt(?:ed)?|missing|not found|unreachable|disconnect(?:ed)?|kill(?:ed)?|terminate(?:d)?|dead|died|panic|alarm|alert|emergency|severe|cannot|unable|impossible|blocked|locked|disaster|malformed|malicious|virus|breach|hack(?:ed)?|attack|exploit|vulnerability|damaged|destroyed|overload|overflow|outage|down|offline|inaccessible|unavailable|suspended|revoked|expired|expires|blacklisted|infected|compromised|hijacked|suspicious|illegal|loss|death|bad)\b/,
+const themeColor = token => ({ source: 'theme', token })
+
+export const DEFAULT_HIGHLIGHT_RULES = [
+  {
+    id: 'error',
+    title: '错误日志',
+    pattern: /\b(?:errors?|err|fail(?:ed|ure)?|fatal|critical|denied|refused|broken|crash(?:ed)?|exception|timeout|abort(?:ed)?|reject(?:ed)?|forbidden|unauthorized|conflict|corrupt(?:ed)?|missing|not found|unreachable|disconnect(?:ed)?|kill(?:ed)?|terminate(?:d)?|dead|died|panic|alarm|alert|emergency|severe|cannot|unable|impossible|blocked|locked|disaster|malformed|malicious|virus|breach|hack(?:ed)?|attack|exploit|vulnerability|damaged|destroyed|overload|overflow|outage|down|offline|inaccessible|unavailable|suspended|revoked|expired|expires|blacklisted|infected|compromised|hijacked|suspicious|illegal|loss|death|bad)\b/.source,
     flags: 'gi',
-    fullLine: true,
-    displayColor: DEFAULT_COLOR_MAPPING.rule1,
-    backgroundColor: null,
-    bold: true,
-    italic: false,
-    underline: false,
-    enabled: true
+    scope: 'lineTail',
+    priority: 100,
+    enabled: true,
+    style: { foreground: themeColor('red'), background: null, bold: true, italic: false, underline: false }
   },
-
-  // 规则2 - 警告类关键词
-  rule2: {
-    title: '警告类关键词',
-    pattern: /\b(?:warn(?:ing)?s?|deprecated|caution|retry|retrying|retried|skipped|ignored|pause(?:d)?|delay(?:ed)?|slow|slower|outdated|obsolete|insecure|vulnerable|risky|unstable|experimental|beta|alpha|preview|temporary|temp|pending|throttle(?:d)?|restrict(?:ed)?|downgrade(?:d)?|fallback|backup|migration|maintenance|partial|limited|degraded|reduced|minor|notice|advisory|reminder|important|security|urgent|attention|required|mandatory|danger|risk|permission)\b/,
+  {
+    id: 'warning',
+    title: '警告日志',
+    pattern: /\b(?:warn(?:ing)?s?|deprecated|caution|retry|retrying|retried|skipped|ignored|pause(?:d)?|delay(?:ed)?|slow|slower|outdated|obsolete|insecure|vulnerable|risky|unstable|experimental|beta|alpha|preview|temporary|temp|pending|throttle(?:d)?|restrict(?:ed)?|downgrade(?:d)?|fallback|backup|migration|maintenance|partial|limited|degraded|reduced|minor|notice|advisory|reminder|important|security|urgent|attention|required|mandatory|danger|risk|permission)\b/.source,
     flags: 'gi',
-    fullLine: false,
-    displayColor: DEFAULT_COLOR_MAPPING.rule2,
-    backgroundColor: null,
-    bold: false,
-    italic: true,
-    underline: false,
-    enabled: true
+    scope: 'match',
+    priority: 80,
+    enabled: true,
+    style: { foreground: themeColor('yellow'), background: null, bold: false, italic: true, underline: false }
   },
-
-  // 规则3 - 成功类关键词
-  rule3: {
-    title: '成功类关键词',
-    pattern: /\b(?:success(?:ful)?|successfully|complete(?:d)?|completed|finish(?:ed)?|finished|ok(?:ay)?|ready|active|running|begin|launch(?:ed)?|launched|connect(?:ed)?|connected|online|available|enabled|valid|verified|confirmed|approved|passed|accepted|resolved|fixed|repaired|restored|recovered|upgraded|updated|installed|deployed|built|compiled|loaded|mounted|synchronized|synced|healthy|stable|secure|safe|protected|authenticated|authorized|granted|allowed|permitted|working|alive|opened|succeeded|established)\b/,
+  {
+    id: 'success',
+    title: '成功状态',
+    pattern: /\b(?:success(?:ful)?|successfully|complete(?:d)?|completed|finish(?:ed)?|finished|ok(?:ay)?|ready|active|running|begin|launch(?:ed)?|launched|connect(?:ed)?|connected|online|available|enabled|valid|verified|confirmed|approved|passed|accepted|resolved|fixed|repaired|restored|recovered|upgraded|updated|installed|deployed|built|compiled|loaded|mounted|synchronized|synced|healthy|stable|secure|safe|protected|authenticated|authorized|granted|allowed|permitted|working|alive|opened|succeeded|established)\b/.source,
     flags: 'gi',
-    fullLine: false,
-    displayColor: DEFAULT_COLOR_MAPPING.rule3,
-    backgroundColor: null,
-    bold: false,
-    italic: false,
-    underline: false,
-    enabled: true
+    scope: 'match',
+    priority: 70,
+    enabled: true,
+    style: { foreground: themeColor('green'), background: null, bold: false, italic: false, underline: false }
   },
-
-  // 规则4 - 信息类关键词
-  rule4: {
-    title: '信息类关键词',
-    pattern: /\b(?:info|information|notification|message|msg|debug|trace|verbose|status|report|summary|loading|connecting|processing|monitoring|checking|scanning|analyzing|parsing|building|compiling|initializing|setup|preparing|progress|executing|stopped|stopping|resumed|resuming|restarted|restarting|closed|queued|removed|sleeping|zombie)\b/,
+  {
+    id: 'info',
+    title: '信息日志',
+    pattern: /\b(?:info|information|notification|message|msg|debug|trace|verbose|status|report|summary|loading|connecting|processing|monitoring|checking|scanning|analyzing|parsing|building|compiling|initializing|setup|preparing|progress|executing|stopped|stopping|resumed|resuming|restarted|restarting|closed|queued|removed|sleeping|zombie)\b/.source,
     flags: 'gi',
-    fullLine: false,
-    displayColor: DEFAULT_COLOR_MAPPING.rule4,
-    backgroundColor: null,
-    bold: false,
-    italic: false,
-    underline: false,
-    enabled: true
+    scope: 'match',
+    priority: 60,
+    enabled: true,
+    style: { foreground: themeColor('cyan'), background: null, bold: false, italic: false, underline: false }
   },
-
-  // 规则5 - 网络地址
-  rule5: {
-    title: 'IP地址和端口',
-    pattern: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?::[1-9]\d{0,4})?\b|(?:(?:[0-9a-fA-F]{1,4}:)*)?::(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{0,4}|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}/,
+  {
+    id: 'network',
+    title: 'IP 地址和端口',
+    pattern: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?::[1-9]\d{0,4})?\b|(?:(?:[0-9a-fA-F]{1,4}:)*)?::(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{0,4}|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}/.source,
     flags: 'gi',
-    fullLine: false,
-    displayColor: DEFAULT_COLOR_MAPPING.rule5,
-    backgroundColor: null,
-    bold: false,
-    italic: false,
-    underline: false,
-    enabled: true
+    scope: 'match',
+    priority: 50,
+    enabled: true,
+    style: { foreground: themeColor('magenta'), background: null, bold: false, italic: false, underline: false }
   },
-
-  // 规则6 - URL链接、邮箱地址、文件路径
-  rule6: {
-    title: 'URL链接和路径',
-    pattern: /(?:https?|ftp|ftps|ssh|telnet|ws|wss):\/\/[^\s]+|file:\/\/[^\s]+|mailto:[^\s]+|www\.[^\s]+\.[a-z]{2,}[^\s]*|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|(?<=^|\s)(?:[/~]|\.\.?\/)[a-zA-Z0-9_\-./]+|(?<=^|\s)[A-Z]:\\[a-zA-Z0-9_\-.\\\s]+/,
+  {
+    id: 'link',
+    title: 'URL、邮箱和路径',
+    pattern: /(?:https?|ftp|ftps|ssh|telnet|ws|wss):\/\/[^\s]+|file:\/\/[^\s]+|mailto:[^\s]+|www\.[^\s]+\.[a-z]{2,}[^\s]*|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|(?<=^|\s)(?:[/~]|\.\.?\/)[a-zA-Z0-9_\-./]+|(?<=^|\s)[A-Z]:\\[a-zA-Z0-9_\-.\\\s]+/.source,
     flags: 'gi',
-    fullLine: false,
-    displayColor: DEFAULT_COLOR_MAPPING.rule6,
-    backgroundColor: null,
-    bold: false,
-    italic: false,
-    underline: true,
-    enabled: true
+    scope: 'match',
+    priority: 45,
+    enabled: true,
+    style: { foreground: themeColor('blue'), background: null, bold: false, italic: false, underline: true }
   },
-
-  // 规则7 - 日期时间格式
-  rule7: {
+  {
+    id: 'datetime',
     title: '日期时间',
-    pattern: /\b\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[Tt\s]\d{1,2}:\d{1,2}(?::\d{1,2})?(?:\.\d+)?[Zz]?)?\b|\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b|\b(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\.\d+)?(?:\s?[AaPp][Mm])?\b|\[\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d+)?\]|\b\d{10,13}\b/,
+    pattern: /\b\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[Tt\s]\d{1,2}:\d{1,2}(?::\d{1,2})?(?:\.\d+)?[Zz]?)?\b|\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b|\b(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\.\d+)?(?:\s?[AaPp][Mm])?\b|\[\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d+)?\]|\b\d{10,13}\b/.source,
     flags: 'gi',
-    fullLine: false,
-    displayColor: '#ffffff',
-    backgroundColor: '#fa541c',
-    bold: false,
-    italic: false,
-    underline: false,
-    enabled: true
+    scope: 'match',
+    priority: 40,
+    enabled: true,
+    style: { foreground: themeColor('brightBlack'), background: null, bold: false, italic: false, underline: false }
   },
-
-  // 规则8 - 带单位的数据
-  rule8: {
-    title: '数据和单位',
-    pattern: /\b\d+(?:\.\d+)?\s*(?:TiB|GiB|MiB|KiB|TB|GB|MB|KB|Tbps|Gbps|Mbps|Kbps|bps|ns|μs|ms|min|hrs?|°C|°F|Hz|KHz|MHz|GHz|THz|mV|kV|mA|kA|mW|kW|MW|GW|fps|rpm|RPM|dpi|ppi|px|bits?|bytes?|cores?|threads?)\b|\b(?:\d+(?:\.\d+)?|100(?:\.0+)?)\s*%|\b\d+(?:\.\d+)?\s*(?:ops[/]s|req[/]s|qps|tps|rps|iops|IOPS|pps|PPS)\b|\b\d+(?:\.\d+)?\s+(?:milliseconds?|seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b/,
+  {
+    id: 'measurement',
+    title: '数值与单位',
+    pattern: /\b\d+(?:\.\d+)?\s*(?:TiB|GiB|MiB|KiB|TB|GB|MB|KB|Tbps|Gbps|Mbps|Kbps|bps|ns|μs|ms|min|hrs?|°C|°F|Hz|KHz|MHz|GHz|THz|mV|kV|mA|kA|mW|kW|MW|GW|fps|rpm|RPM|dpi|ppi|px|bits?|bytes?|cores?|threads?)\b|\b(?:\d+(?:\.\d+)?|100(?:\.0+)?)\s*%|\b\d+(?:\.\d+)?\s*(?:ops[/]s|req[/]s|qps|tps|rps|iops|IOPS|pps|PPS)\b|\b\d+(?:\.\d+)?\s+(?:milliseconds?|seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b/.source,
     flags: 'gi',
-    fullLine: false,
-    displayColor: DEFAULT_COLOR_MAPPING.rule8,
-    backgroundColor: null,
-    bold: false,
-    italic: false,
-    underline: false,
-    enabled: true
+    scope: 'match',
+    priority: 35,
+    enabled: true,
+    style: { foreground: themeColor('magenta'), background: null, bold: false, italic: false, underline: false }
+  },
+]
+
+export const BUILTIN_HIGHLIGHT_RULE_IDS = DEFAULT_HIGHLIGHT_RULES.map(rule => rule.id)
+
+const clone = value => JSON.parse(JSON.stringify(value))
+
+export function createDefaultHighlightingSettings() {
+  return {
+    enabled: false,
+    debugMode: false,
+    presetId: HIGHLIGHT_PRESET_ID,
+    presetVersion: HIGHLIGHT_PRESET_VERSION,
+    builtinOverrides: [],
+    customRules: []
   }
+}
+
+export function resolveHighlightRules(highlighting = {}) {
+  if (Array.isArray(highlighting.rules)) return clone(highlighting.rules)
+
+  const overrides = new Map((highlighting.builtinOverrides || []).map(rule => [rule.id, rule,]))
+  const builtins = DEFAULT_HIGHLIGHT_RULES.map(rule => clone(overrides.get(rule.id) || rule))
+  const customRules = (highlighting.customRules || [])
+    .filter(rule => !BUILTIN_HIGHLIGHT_RULE_IDS.includes(rule.id))
+    .map(clone)
+  return [...builtins, ...customRules,].slice(0, MAX_HIGHLIGHT_RULES)
+}
+
+export function serializeHighlightRules(rules = []) {
+  const defaults = new Map(DEFAULT_HIGHLIGHT_RULES.map(rule => [rule.id, rule,]))
+  const builtinOverrides = []
+  const customRules = []
+
+  rules.forEach((rule) => {
+    const defaultRule = defaults.get(rule.id)
+    if (!defaultRule) {
+      customRules.push(clone(rule))
+    } else if (JSON.stringify(rule) !== JSON.stringify(defaultRule)) {
+      builtinOverrides.push(clone(rule))
+    }
+  })
+
+  return { builtinOverrides, customRules }
+}
+
+function colorToRgb(value) {
+  if (!value || value === 'transparent') return null
+  const hex = value.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i)?.[1]
+  if (hex) {
+    const normalized = hex.length <= 4
+      ? hex.slice(0, 3).split('').map(char => char + char).join('')
+      : hex.slice(0, 6)
+    return [0, 2, 4,].map(index => parseInt(normalized.slice(index, index + 2), 16))
+  }
+  const rgb = value.match(/^rgba?\(\s*([\d.]+%?)\s*,\s*([\d.]+%?)\s*,\s*([\d.]+%?)/i)
+  return rgb ? rgb.slice(1, 4).map((channel) => {
+    const value = Number.parseFloat(channel)
+    const normalized = channel.endsWith('%') ? value * 2.55 : value
+    return Math.max(0, Math.min(255, Math.round(normalized)))
+  }) : null
+}
+
+function colorAnsi(color, background = false) {
+  if (!color) return ''
+  if (color.source === 'theme') {
+    const foregroundCode = themeForegroundCodes[color.token]
+    if (!foregroundCode) return ''
+    return `\x1b[${ background ? foregroundCode + 10 : foregroundCode }m`
+  }
+  const rgb = colorToRgb(color.value)
+  if (!rgb) return ''
+  return `\x1b[${ background ? 48 : 38 };2;${ rgb.join(';') }m`
+}
+
+function styleAnsi(style = {}) {
+  return [
+    colorAnsi(style.foreground),
+    colorAnsi(style.background, true),
+    style.bold ? '\x1b[1m' : '',
+    style.italic ? '\x1b[3m' : '',
+    style.underline ? '\x1b[4m' : '',
+  ].join('')
+}
+
+function readExtendedColor(tokens, index) {
+  const mode = Number(tokens[index + 1])
+  if (mode === 5 && tokens[index + 2] !== undefined) {
+    return { value: tokens.slice(index, index + 3).join(';'), end: index + 2 }
+  }
+  if (mode === 2 && tokens[index + 4] !== undefined) {
+    return { value: tokens.slice(index, index + 5).join(';'), end: index + 4 }
+  }
+  return { value: tokens[index], end: index }
+}
+
+class SgrState {
+
+  constructor() {
+    this.values = new Map()
+  }
+
+  clear() {
+    this.values.clear()
+  }
+
+  apply(sequence) {
+    const match = sequence.match(/^\x1b\[([0-9:;]*)m$/)
+    if (!match) return false
+    const tokens = match[1] === '' ? ['0',] : match[1].split(';')
+
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index] || '0'
+      const code = Number(token.split(':')[0])
+      if (!Number.isFinite(code)) continue
+      if (code === 0) this.clear()
+      else if (code === 1) this.values.set('bold', token)
+      else if (code === 2) this.values.set('dim', token)
+      else if (code === 22) {
+        this.values.delete('bold')
+        this.values.delete('dim')
+      } else if (code === 3 || code === 20) this.values.set('italic', token)
+      else if (code === 23) this.values.delete('italic')
+      else if (code === 4 || code === 21) this.values.set('underline', token)
+      else if (code === 24) this.values.delete('underline')
+      else if (code === 5 || code === 6) this.values.set('blink', token)
+      else if (code === 25) this.values.delete('blink')
+      else if (code === 7) this.values.set('inverse', token)
+      else if (code === 27) this.values.delete('inverse')
+      else if (code === 8) this.values.set('hidden', token)
+      else if (code === 28) this.values.delete('hidden')
+      else if (code === 9) this.values.set('strike', token)
+      else if (code === 29) this.values.delete('strike')
+      else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) this.values.set('foreground', token)
+      else if (code === 38) {
+        const color = token.includes(':') ? { value: token, end: index } : readExtendedColor(tokens, index)
+        this.values.set('foreground', color.value)
+        index = color.end
+      } else if (code === 39) this.values.delete('foreground')
+      else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) this.values.set('background', token)
+      else if (code === 48) {
+        const color = token.includes(':') ? { value: token, end: index } : readExtendedColor(tokens, index)
+        this.values.set('background', color.value)
+        index = color.end
+      } else if (code === 49) this.values.delete('background')
+      else if (code === 58) {
+        const color = token.includes(':') ? { value: token, end: index } : readExtendedColor(tokens, index)
+        this.values.set('underlineColor', color.value)
+        index = color.end
+      } else if (code === 59) this.values.delete('underlineColor')
+    }
+    return true
+  }
+
+  restore() {
+    const values = [...this.values.values(),]
+    return values.length ? `\x1b[${ values.join(';') }m` : ''
+  }
+}
+
+function compileRule(rule, index) {
+  if (rule.enabled === false || !styleAnsi(rule.style)) return null
+  const flags = rule.flags.includes('g') ? rule.flags : `${ rule.flags }g`
+  try {
+    return { rule, index, expression: new RegExp(rule.pattern, flags) }
+  } catch (error) {
+    console.warn(`跳过无效的终端高亮规则 ${ rule.id }:`, error.message)
+    return null
+  }
+}
+
+function expandMatchScope(text, match, scope) {
+  if (scope === 'match') return { start: match.index, end: match.index + match[0].length }
+  const lineStart = text.lastIndexOf('\n', match.index - 1) + 1
+  const newlineIndex = text.indexOf('\n', match.index + match[0].length)
+  let lineEnd = newlineIndex < 0 ? text.length : newlineIndex
+  if (lineEnd > lineStart && text[lineEnd - 1] === '\r') lineEnd -= 1
+  return {
+    start: scope === 'lineTail' ? match.index : lineStart,
+    end: lineEnd
+  }
+}
+
+function rangesOverlap(left, right) {
+  return left.start < right.end && right.start < left.end
+}
+
+function splitIncompleteAnsiTail(text) {
+  const escapeIndex = text.lastIndexOf('\x1b')
+  if (escapeIndex < 0) return { complete: text, carry: '' }
+  const tail = text.slice(escapeIndex)
+  const introducer = tail[1]
+  let isIncomplete = tail.length === 1
+
+  if (introducer === '[') {
+    // CSI 的结束字节只需要出现在序列前缀末尾，后面可以继续跟普通文本。
+    isIncomplete = !/^\x1b\[[0-?]*[ -/]*[@-~]/.test(tail)
+  } else if (introducer === ']') {
+    isIncomplete = !/^\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/.test(tail)
+  } else if (['P', 'X', '^', '_',].includes(introducer)) {
+    isIncomplete = !/^\x1b(?:P|X|\^|_)[\s\S]*?\x1b\\/.test(tail)
+  } else if (tail.length >= 2) {
+    // 两字节 ESC 序列，或者不认识的扩展序列，交给 xterm 原样处理。
+    isIncomplete = false
+  }
+
+  return isIncomplete
+    ? { complete: text.slice(0, escapeIndex), carry: tail }
+    : { complete: text, carry: '' }
 }
 
 export class TerminalHighlighter {
-  // ANSI序列正则表达式
-  // eslint-disable-next-line no-control-regex
-  static ANSI_DETECT = /\x1b(?:\[|\]|P|X|\^|_|[@-Z\\-_]|[78=><])/
-  // eslint-disable-next-line no-control-regex
+
   static ANSI_FULL = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[\s\S]*?\x1b\\|\x1bX[\s\S]*?\x1b\\|\x1b\^[\s\S]*?\x1b\\|\x1b_[\s\S]*?\x1b\\|\x1b(?:[@-Z\\-_]|[78=><])/g
 
-  constructor(terminal, options = {}) {
-    this.terminal = terminal
-    this.enabled = options.enabled !== false
-    this.debugMode = options.debugMode || false
-
-    // 自定义规则
-    this.customRules = options.customRules || null
-
-    // 编译规则（按flags分组的合并正则）
-    const compiled = this.compileRules()
-    this.mergedPatterns = compiled.mergedPatterns
-
-    if (this.debugMode) {
-      console.log('已初始化终端高亮器')
-      const totalRules = this.mergedPatterns.reduce((sum, group) =>
-        sum + Object.keys(group.ruleMap).length, 0)
-      console.log('已启用规则数:', totalRules)
-    }
+  constructor(_terminal, options = {}) {
+    this.enabled = options.enabled === true
+    this.debugMode = options.debugMode === true
+    this.sgrState = new SgrState()
+    this.ansiCarry = ''
+    this.updateCustomRules(options.customRules)
   }
 
-  // 预编译合并的规则 - 按flags分组
-  compileRules() {
-    const rulesToUse = this.customRules || HIGHLIGHT_RULES
-
-    // 按 flags 分组
-    const rulesByFlags = {}
-
-    for (const [name, rule] of Object.entries(rulesToUse)) {
-      // 跳过禁用的规则
-      if (rule.enabled === false) {
-        continue
-      }
-
-      // 使用通用方法处理pattern
-      const patternSource = this.extractPatternSource(rule)
-      if (!patternSource) {
-        console.warn(`跳过无效的规则 ${ name }:`, rule.pattern)
-        continue
-      }
-
-      const flags = rule.flags || 'gi'
-
-      if (!rulesByFlags[flags]) {
-        rulesByFlags[flags] = {
-          patterns: [],
-          rules: []
-        }
-      }
-
-      rulesByFlags[flags].patterns.push(`(${ patternSource })`)
-      rulesByFlags[flags].rules.push({
-        name,
-        displayColor: rule.displayColor,
-        backgroundColor: rule.backgroundColor,
-        bold: rule.bold,
-        italic: rule.italic,
-        underline: rule.underline
-      })
-    }
-
-    // 为每组flags创建合并的正则
-    const mergedPatterns = []
-
-    for (const [flags, group] of Object.entries(rulesByFlags)) {
-      if (group.patterns.length === 0) continue
-
-      const mergedPatternSource = group.patterns.join('|')
-      const mergedPattern = new RegExp(mergedPatternSource, flags)
-
-      // 创建规则映射（捕获组索引 -> 规则）
-      const ruleMap = {}
-      group.rules.forEach((rule, index) => {
-        ruleMap[index + 1] = rule
-      })
-
-      mergedPatterns.push({
-        pattern: mergedPattern,
-        ruleMap,
-        flags
-      })
-    }
-
-    if (this.debugMode) {
-      console.log('合并正则分组数:', mergedPatterns.length)
-      mergedPatterns.forEach(group => {
-        console.log(`  flags=${ group.flags }, 规则数=${ Object.keys(group.ruleMap).length }`)
-      })
-    }
-
-    return { mergedPatterns }
-  }
-
-  // 提取并处理规则的pattern源码
-  extractPatternSource(rule) {
-    let patternSource = ''
-
-    if (rule.pattern instanceof RegExp) {
-      patternSource = rule.pattern.source
-    } else if (rule.pattern && rule.pattern.source) {
-      patternSource = rule.pattern.source
-    } else {
-      return null
-    }
-
-    // 如果启用了fullLine，扩展模式到行尾
-    if (rule.fullLine) {
-      patternSource = `(?:${ patternSource }).*?(?=\\r?\\n|$)`
-    }
-
-    return patternSource
-  }
-
-  // 更新自定义规则
   updateCustomRules(customRules) {
-    this.customRules = customRules
-
-    // 重新编译规则
-    const compiled = this.compileRules()
-    this.mergedPatterns = compiled.mergedPatterns
-
-    if (this.debugMode) {
-      const totalRules = this.mergedPatterns.reduce((sum, group) =>
-        sum + Object.keys(group.ruleMap).length, 0)
-      console.log('规则已更新，启用规则数:', totalRules)
-    }
+    this.rules = clone(customRules || DEFAULT_HIGHLIGHT_RULES)
+    this.compiledRules = this.rules.map(compileRule).filter(Boolean)
   }
 
-  // 主要的高亮方法
+  setEnabled(enabled) {
+    this.enabled = enabled === true
+  }
+
+  setDebugMode(enabled) {
+    this.debugMode = enabled === true
+  }
+
+  resetStreamState() {
+    this.sgrState.clear()
+    this.ansiCarry = ''
+  }
+
   highlightText(text) {
-    if (!this.enabled || !text) {
-      return text
-    }
-
-    // 跳过空白、极短文本、纯符号文本
-    if (this.shouldSkip(text)) {
-      if (this.debugMode) {
-        console.log('跳过特殊文本:', JSON.stringify(text))
-      }
-      return text
-    }
-
-    // 检查是否包含ANSI序列
-    if (this.hasAnsiSequences(text)) {
-      // 如果文本主要是控制序列（如光标移动、清屏等），则跳过
-      if (this.isControlSequenceOnly(text)) {
-        if (this.debugMode) {
-          console.log('跳过控制序列文本:', text.replace(/\x1b/g, '\\x1b'))
-        }
-        return text
-      }
-
-      // 包含复杂控制序列（如OSC标题更新）时直接旁路，避免破坏提示符刷新
-      if (this.hasComplexControlSequences(text)) {
-        if (this.debugMode) {
-          console.log('检测到复杂控制序列，跳过高亮:', text.replace(/\x1b/g, '\\x1b'))
-        }
-        return text
-      }
-
-      // 对于包含少量ANSI但有实际内容的文本，尝试着去处理
-      try {
-        const result = this.applyRulesWithAnsi(text)
-        if (this.debugMode && result !== text) {
-          console.log('原始文本 (含ANSI):', text.replace(/\x1b/g, '\\x1b'))
-          console.log('高亮后:', result.replace(/\x1b/g, '\\x1b'))
-        }
-        return result
-      } catch (error) {
-        if (this.debugMode) {
-          console.log('ANSI文本处理失败，保持原样:', text.replace(/\x1b/g, '\\x1b'))
-        }
-        return text
-      }
+    if (!text) return text
+    const { complete, carry } = splitIncompleteAnsiTail(`${ this.ansiCarry }${ text }`)
+    this.ansiCarry = carry
+    if (!complete) return ''
+    if (!this.enabled || !/[\p{L}\p{N}]/u.test(complete) || complete.length > 65536) {
+      this.trackAnsiState(complete)
+      return complete
     }
 
     try {
-      const highlightedText = this.applyRules(text)
-
-      if (this.debugMode && text !== highlightedText) {
-        console.log('原始文本:', JSON.stringify(text))
-        console.log('高亮后:', highlightedText.replace(/\x1b/g, '\\x1b'))
+      const { parts, plainText } = this.parseParts(complete)
+      const matches = this.findMatches(plainText)
+      if (!matches.length) {
+        parts.forEach(part => part.type === 'ansi' && this.sgrState.apply(part.content))
+        return complete
       }
-
-      return highlightedText
+      const output = this.renderParts(parts, matches)
+      if (this.debugMode) console.debug('终端内容高亮命中', { input: complete, output, matches })
+      return output
     } catch (error) {
-      console.error('高亮处理失败:', error)
-      return text
+      if (this.debugMode) console.warn('终端内容高亮失败，已旁路原始输出:', error)
+      this.trackAnsiState(complete)
+      return complete
     }
   }
 
-  // 检测ANSI序列
-  hasAnsiSequences(text) {
-    return TerminalHighlighter.ANSI_DETECT.test(text)
+  trackAnsiState(text) {
+    text.replace(TerminalHighlighter.ANSI_FULL, (sequence) => {
+      this.sgrState.apply(sequence)
+      return sequence
+    })
   }
 
-  // 检测复杂控制序列（OSC / DCS / PM / APC 等）
-  hasComplexControlSequences(text) {
-    // eslint-disable-next-line no-control-regex
-    return /\x1b(?:\]|P|X|\^|_)/.test(text)
-  }
-
-  // 检查是否主要是控制序列
-  isControlSequenceOnly(text) {
-    // 移除ANSI序列后，如果剩余内容很少，则认为是控制序列
-    const cleanText = text.replace(TerminalHighlighter.ANSI_FULL, '').trim()
-    return cleanText.length < 3 || /^[\s\r\n]*$/.test(cleanText)
-  }
-
-  // 处理包含ANSI序列的文本，保护现有的ANSI序列，只对纯文本部分应用高亮
-  applyRulesWithAnsi(text) {
-    // 分离ANSI序列和纯文本
+  parseParts(text) {
     const parts = []
+    let plainText = ''
     let lastIndex = 0
+    text.replace(TerminalHighlighter.ANSI_FULL, (sequence, offset) => {
+      if (offset > lastIndex) {
+        const content = text.slice(lastIndex, offset)
+        parts.push({ type: 'text', content })
+        plainText += content
+      }
+      parts.push({ type: 'ansi', content: sequence })
+      lastIndex = offset + sequence.length
+      return sequence
+    })
+    if (lastIndex < text.length) {
+      const content = text.slice(lastIndex)
+      parts.push({ type: 'text', content })
+      plainText += content
+    }
+    return { parts, plainText }
+  }
 
-    // 使用全局正则匹配ANSI序列
-    const matches = text.matchAll(TerminalHighlighter.ANSI_FULL)
+  findMatches(text) {
+    const candidates = []
+    const dedupe = new Set()
 
-    for (const match of matches) {
-      // 添加ANSI序列之前的文本
-      if (match.index > lastIndex) {
-        const textPart = text.slice(lastIndex, match.index)
-        if (textPart) {
-          parts.push({ type: 'text', content: textPart })
+    for (const { rule, index, expression } of this.compiledRules) {
+      expression.lastIndex = 0
+      let match
+      while ((match = expression.exec(text)) !== null && candidates.length < 2000) {
+        if (!match[0]) {
+          expression.lastIndex += 1
+          continue
+        }
+        const range = expandMatchScope(text, match, rule.scope)
+        const key = `${ rule.id }:${ range.start }:${ range.end }`
+        if (range.end > range.start && !dedupe.has(key)) {
+          dedupe.add(key)
+          candidates.push({
+            ...range,
+            rule,
+            order: index,
+            priority: Number.isInteger(rule.priority) ? rule.priority : 0
+          })
         }
       }
-
-      // 添加ANSI序列
-      parts.push({ type: 'ansi', content: match[0] })
-      lastIndex = match.index + match[0].length
     }
 
-    // 添加最后剩余的文本
-    if (lastIndex < text.length) {
-      const textPart = text.slice(lastIndex)
-      if (textPart) {
-        parts.push({ type: 'text', content: textPart })
+    candidates.sort((left, right) =>
+      right.priority - left.priority
+      || left.order - right.order
+      || left.start - right.start
+      || right.end - left.end)
+
+    const accepted = []
+    for (const candidate of candidates) {
+      if (accepted.some(match => rangesOverlap(match, candidate))) continue
+      accepted.push(candidate)
+    }
+    return accepted.sort((left, right) => left.start - right.start)
+  }
+
+  renderParts(parts, matches) {
+    let output = ''
+    let plainIndex = 0
+    let matchIndex = 0
+    let activeMatch = null
+
+    const closeMatch = () => {
+      if (!activeMatch) return
+      output += `\x1b[0m${ this.sgrState.restore() }`
+      activeMatch = null
+      matchIndex += 1
+    }
+
+    const syncMatch = (allowOpen = true) => {
+      if (activeMatch && plainIndex >= activeMatch.end) closeMatch()
+      const nextMatch = matches[matchIndex]
+      if (allowOpen && !activeMatch && nextMatch?.start === plainIndex) {
+        activeMatch = nextMatch
+        output += styleAnsi(activeMatch.rule.style)
       }
     }
 
-    // 对纯文本部分应用高亮规则
-    let result = ''
     for (const part of parts) {
       if (part.type === 'ansi') {
-        result += part.content
-      } else {
-        const highlighted = this.applyRules(part.content)
-        result += highlighted
+        syncMatch(false)
+        output += part.content
+        const isSgr = this.sgrState.apply(part.content)
+        if (activeMatch && isSgr) output += styleAnsi(activeMatch.rule.style)
+        else syncMatch()
+        continue
       }
-    }
 
-    return result
-  }
-
-  // 判断是否跳过处理
-  shouldSkip(text) {
-    // 跳过空文本
-    if (!text.trim()) return true
-
-    // 跳过极短文本
-    if (text.length < 3) return true
-
-    // 跳过纯符号文本
-    if (/^[\W_]+$/.test(text)) return true
-
-    return false
-  }
-
-  // 应用所有规则 - 使用分组合并的正则
-  applyRules(text) {
-    if (!this.mergedPatterns || this.mergedPatterns.length === 0) {
-      return text // 没有启用的规则
-    }
-
-    let result = text
-
-    // 依次应用每个flags分组的合并正则
-    for (const group of this.mergedPatterns) {
-      result = result.replace(group.pattern, (...args) => {
-        const match = args[0]
-
-        // 避免重复高亮已包含ANSI序列的匹配
-        if (TerminalHighlighter.ANSI_DETECT.test(match)) {
-          return match
+      syncMatch()
+      let offset = 0
+      while (offset < part.content.length) {
+        syncMatch()
+        const nextBoundary = activeMatch
+          ? activeMatch.end
+          : (matches[matchIndex]?.start ?? Number.POSITIVE_INFINITY)
+        const available = part.content.length - offset
+        const length = Math.min(available, Math.max(0, nextBoundary - plainIndex))
+        if (length === 0) {
+          syncMatch()
+          continue
         }
-
-        // 找到匹配的捕获组
-        const groups = args.slice(1, -2)
-
-        // 找到第一个非undefined的捕获组
-        for (let i = 0; i < groups.length; i++) {
-          if (groups[i] !== undefined) {
-            const rule = group.ruleMap[i + 1]
-            if (rule) {
-              return this.applyStyle(match, rule)
-            }
-            break
-          }
-        }
-
-        return match
-      })
-    }
-
-    return result
-  }
-
-  // 应用样式到匹配文本
-  applyStyle(text, rule) {
-    let styleString = ''
-
-    // 先添加背景色
-    if (rule.backgroundColor) {
-      const bgColor = this.getBackgroundColorCode(rule.backgroundColor)
-      if (bgColor) {
-        styleString += bgColor
+        output += part.content.slice(offset, offset + length)
+        offset += length
+        plainIndex += length
       }
     }
-
-    // 添加文字样式
-    if (rule.bold) styleString += TEXT_STYLES.BOLD
-    if (rule.italic) styleString += TEXT_STYLES.ITALIC
-    if (rule.underline) styleString += TEXT_STYLES.UNDERLINE
-
-    // 添加文本颜色
-    if (rule.displayColor) {
-      const textColor = this.getTextColorCode(rule.displayColor)
-      if (textColor) {
-        styleString += textColor
-      }
-    }
-
-    return `${styleString}${text}${TEXT_STYLES.RESET}`
-  }
-
-  // 获取文本颜色 ANSI 代码
-  getTextColorCode(hexColor) {
-    if (!hexColor) return ''
-
-    // 将十六进制颜色转换为 RGB
-    const rgb = this.hexToRgb(hexColor)
-    if (!rgb) return ''
-
-    // 使用 RGB 模式 (38;2;r;g;b) 38=前景色(文本), 48=背景色
-    return `\x1b[38;2;${ rgb.r };${ rgb.g };${ rgb.b }m`
-  }
-
-  // 获取背景色 ANSI 代码
-  getBackgroundColorCode(hexColor) {
-    if (!hexColor) return ''
-
-    // 将十六进制颜色转换为 RGB
-    const rgb = this.hexToRgb(hexColor)
-    if (!rgb) return ''
-
-    // 使用 RGB 模式 (48;2;r;g;b) 38=前景色(文本), 48=背景色
-    return `\x1b[48;2;${ rgb.r };${ rgb.g };${ rgb.b }m`
-  }
-
-  // 十六进制颜色转 RGB
-  hexToRgb(hex) {
-    if (!hex) return null
-
-    // 移除 # 符号
-    hex = hex.replace('#', '')
-
-    // 简写形式的hex
-    if (hex.length === 3) {
-      hex = hex.split('').map(char => char + char).join('')
-    }
-
-    if (hex.length !== 6) return null
-
-    return {
-      r: parseInt(hex.substring(0, 2), 16),
-      g: parseInt(hex.substring(2, 4), 16),
-      b: parseInt(hex.substring(4, 6), 16)
-    }
-  }
-
-  // 启用/禁用高亮
-  setEnabled(enabled) {
-    this.enabled = enabled
-  }
-
-  // 启用/禁用调试模式
-  setDebugMode(debugMode) {
-    this.debugMode = debugMode
-    if (debugMode) {
-      console.log('终端高亮调试模式已启用')
-    } else {
-      console.log('终端高亮调试模式已禁用')
-    }
-  }
-
-  // 应用单个规则的HTML预览
-  applySingleRuleForHtml(text, rule) {
-    try {
-      // 使用通用方法获取pattern源码
-      const patternSource = this.extractPatternSource(rule)
-      if (!patternSource) {
-        return '正则表达式格式错误'
-      }
-
-      const flags = rule.flags || 'gi'
-      const regex = new RegExp(patternSource, flags)
-
-      return text.replace(regex, (match) => {
-        return this.applyHtmlStyle(match, rule)
-      })
-    } catch (error) {
-      return `正则表达式错误: ${ error.message }`
-    }
-  }
-
-  // 为HTML应用样式
-  applyHtmlStyle(text, rule) {
-    let styleProps = ''
-
-    // 字体设置
-    styleProps += 'font-family: monospace !important;'
-    styleProps += 'font-size: 14px !important;'
-
-    // 文字样式
-    styleProps += 'font-weight: ' + (rule.bold ? 'bold' : 'normal') + ' !important;'
-    styleProps += 'font-style: ' + (rule.italic ? 'italic' : 'normal') + ' !important;'
-
-    // 文本颜色
-    if (rule.displayColor) {
-      styleProps += ` color: ${ rule.displayColor } !important;`
-    }
-
-    // 背景色
-    if (rule.backgroundColor) {
-      styleProps += ` background-color: ${ rule.backgroundColor } !important;`
-    }
-
-    // 下划线
-    if (rule.underline) {
-      styleProps += ' text-decoration: underline !important;'
-    }
-
-    // 基础样式
-    styleProps += ' padding: 2px 4px !important; border-radius: 3px !important;'
-
-    return `<span style="${ styleProps }">${ text }</span>`
+    syncMatch()
+    if (activeMatch) closeMatch()
+    return output
   }
 }

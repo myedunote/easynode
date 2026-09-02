@@ -32,13 +32,13 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 // import { SearchBarAddon } from 'xterm-addon-search-bar'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import themeList from 'xterm-theme'
 import { terminalStatus } from '@/utils/enum'
+import { hasDecorativeBackground, resolveTerminalTheme, TERMINAL_WELCOME_LINES } from '@/utils/terminal-settings'
 
 import { useContextMenu } from '@/composables/useContextMenu'
 import { isDockerId, isDockerComposeYml, generateSocketInstance } from '@/utils'
 import useMobileWidth from '@/composables/useMobileWidth'
-import { TerminalHighlighter } from '@/utils/highlighter'
+import { resolveHighlightRules, TerminalHighlighter } from '@/utils/highlighter'
 import clipboard from '@/utils/clipboard'
 import { resolveTerminalRequestId } from '@/composables/agentTerminal'
 
@@ -100,23 +100,23 @@ const { showMenu, closeMenu, isVisible } = useContextMenu()
 // 临时路径同步回调
 const tempPathSyncCallback = ref(null)
 
-const theme = computed(() => themeList[$store.terminalConfig.themeName])
-const fontSize = computed(() => $store.terminalConfig.fontSize)
-const fontFamily = computed(() => $store.terminalConfig.fontFamily)
-const fontColor = computed(() => $store.terminalConfig.fontColor)
-const cursorColor = computed(() => $store.terminalConfig.cursorColor)
-const selectionColor = computed(() => $store.terminalConfig.selectionColor)
-const background = computed(() => $store.terminalConfig.background)
+const terminalSettings = computed(() => $store.effectiveTerminalSettings)
+const theme = computed(() => resolveTerminalTheme(
+  terminalSettings.value,
+  hasDecorativeBackground(terminalSettings.value)
+))
+const fontSize = computed(() => terminalSettings.value.appearance.font.size)
+const fontFamily = computed(() => terminalSettings.value.appearance.font.family)
 const hostObj = computed(() => props.hostObj)
 const hostId = computed(() => hostObj.value.id)
 const host = computed(() => hostObj.value.host)
 const menuCollapse = computed(() => $store.menuCollapse)
-const autoExecuteScript = computed(() => $store.terminalConfig.autoExecuteScript)
-const autoReconnect = computed(() => $store.terminalConfig.autoReconnect)
-const keywordHighlight = computed(() => $store.terminalConfig.keywordHighlight)
-const customHighlightRules = computed(() => $store.terminalConfig.customHighlightRules)
-const highlightDebugMode = computed(() => $store.terminalConfig.highlightDebugMode)
-const autoShowContextMenu = computed(() => $store.terminalConfig.autoShowContextMenu)
+const autoExecuteScript = computed(() => terminalSettings.value.behavior.autoExecuteScript)
+const autoReconnect = computed(() => terminalSettings.value.behavior.autoReconnect)
+const keywordHighlight = computed(() => terminalSettings.value.highlighting.enabled)
+const customHighlightRules = computed(() => resolveHighlightRules(terminalSettings.value.highlighting))
+const highlightDebugMode = computed(() => terminalSettings.value.highlighting.debugMode)
+const autoShowContextMenu = computed(() => terminalSettings.value.behavior.autoShowContextMenu)
 const isPlusActive = computed(() => $store.isPlusActive)
 const isLongPressCtrl = computed(() => props.longPressCtrl)
 const isLongPressAlt = computed(() => props.longPressAlt)
@@ -131,54 +131,9 @@ watch(() => props.suppressFocus, (suppressed) => {
 const applyTerminalTheme = () => {
   if (!term.value || !terminalRef.value) return
 
-  // 构建光标主题
-  const cursorTheme = {
-    cursor: cursorColor.value || theme.value.cursor,
-    cursorAccent: '#000000'
-  }
-
-  // 构建完整主题
-  const customTheme = {
-    ...theme.value,
-    ...cursorTheme
-  }
-
-  // 应用自定义字体颜色
-  if (fontColor.value) {
-    customTheme.foreground = fontColor.value
-  }
-
-  // 应用自定义选中颜色
-  if (selectionColor.value) {
-    customTheme.selectionBackground = selectionColor.value
-  }
-
-  // 根据背景设置应用主题
-  if (background.value) {
-    // 有自定义背景：xterm背景透明，使用terminalRef显示背景
-    term.value.options.theme = { ...customTheme, background: 'transparent' }
-    terminalRef.value.style.backgroundImage = background.value?.startsWith('http')
-      ? `url(${ background.value })`
-      : `${ background.value }`
-    terminalRef.value.style.backgroundColor = ''
-
-    // 设置 viewport 为透明以显示自定义背景
-    const viewport = terminalRef.value.querySelector('.xterm-viewport')
-    if (viewport) {
-      viewport.style.setProperty('background-color', 'transparent', 'important')
-    }
-  } else {
-    // 使用主题背景：清除terminalRef背景，使用xterm主题背景色
-    term.value.options.theme = customTheme
-    terminalRef.value.style.backgroundImage = ''
-    terminalRef.value.style.backgroundColor = ''
-
-    // 设置 viewport 背景色为主题背景色
-    const viewport = terminalRef.value.querySelector('.xterm-viewport')
-    if (viewport) {
-      viewport.style.setProperty('background-color', customTheme.background || '#1e1e1e', 'important')
-    }
-  }
+  term.value.options.theme = theme.value
+  const viewport = terminalRef.value.querySelector('.xterm-viewport')
+  if (viewport) viewport.style.setProperty('background-color', theme.value.background || '#1e1e1e', 'important')
 }
 
 watch(menuCollapse, () => {
@@ -188,10 +143,6 @@ watch(menuCollapse, () => {
 })
 
 watch(theme, () => nextTick(applyTerminalTheme))
-watch(fontColor, () => nextTick(applyTerminalTheme))
-watch(cursorColor, () => nextTick(applyTerminalTheme))
-watch(selectionColor, () => nextTick(applyTerminalTheme))
-watch(background, () => nextTick(applyTerminalTheme), { immediate: true })
 
 watch(fontSize, () => {
   nextTick(() => {
@@ -235,6 +186,11 @@ watch(curStatus, () => {
   hostObj.value.status = curStatus.value
 })
 
+const writeTerminalOutput = (output) => {
+  if (!output || !term.value) return
+  term.value.write(highlighter.value?.highlightText(output) ?? output)
+}
+
 const getCommand = async () => {
   let { data } = await $api.getCommand(hostId.value)
   if (data) initCommand.value = data
@@ -251,19 +207,22 @@ const connectIO = () => {
     console.log('/terminal socket已连接：', hostId.value)
 
     socketConnected.value = true
+    const terminalSize = { rows: term.value.rows, cols: term.value.cols }
 
     // 检查是否是恢复会话
     if (hostObj.value.resumeSessionId) {
       // 恢复会话模式：直接尝试恢复
       socket.value.emit('ws_terminal', {
         hostId: hostId.value,
-        resumeSessionId: hostObj.value.resumeSessionId
+        resumeSessionId: hostObj.value.resumeSessionId,
+        ...terminalSize
       })
     } else {
       // 正常连接模式：forceNew=true，不自动恢复
       socket.value.emit('ws_terminal', {
         hostId: hostId.value,
-        forceNew: true
+        forceNew: true,
+        ...terminalSize
       })
     }
 
@@ -280,16 +239,11 @@ const connectIO = () => {
 
       // 回放缓存的输出
       if (bufferedOutput) {
-        if (keywordHighlight.value && highlighter.value) {
-          const highlightedStr = highlighter.value.highlightText(bufferedOutput)
-          term.value.write(highlightedStr)
-        } else {
-          term.value.write(bufferedOutput)
-        }
+        writeTerminalOutput(bufferedOutput)
       }
 
-      term.value.write('\r\n\x1b[92m═══ 终端已从挂起状态恢复 ═══\x1b[0m\r\n')
-      handleResize()
+      writeTerminalOutput('\r\n\x1b[92m═══ 终端已从挂起状态恢复 ═══\x1b[0m\r\n')
+      socket.value.emit('resize', terminalSize)
 
       // 自动发送回车以显示命令提示符
       setTimeout(() => {
@@ -298,6 +252,7 @@ const connectIO = () => {
     })
 
     socket.value.on('terminal_connect_success', () => {
+      highlighter.value?.resetStreamState()
       socket.value.on('output', (str) => {
         // 如果有临时路径同步回调，先调用它
         if (tempPathSyncCallback.value) {
@@ -306,17 +261,14 @@ const connectIO = () => {
 
         if (props.isSingleWindow && !isPlusActive.value) return
 
-        // 使用高亮器处理
-        if (keywordHighlight.value && highlighter.value) {
-          const highlightedStr = highlighter.value.highlightText(str)
-          term.value.write(highlightedStr)
-        } else {
-          term.value.write(str)
-        }
+        // 保持 SSH 输出与 xterm.write 的原始顺序，避免首屏 resize 与延迟写入竞争。
+        writeTerminalOutput(str)
       })
       socket.value.on('terminal_ai_command_echo', ({ command }) => {
         // 服务端执行的是带边界协议的包装命令；这里只展示原始命令。
-        if (command) term.value?.write(`${ command }\r\n`)
+        if (command) {
+          writeTerminalOutput(`${ command }\r\n`)
+        }
       })
       socket.value.on('terminal_ai_command_progress', (payload = {}) => {
         aiCommandRequests.get(payload.requestId)?.onProgress?.(payload)
@@ -330,7 +282,6 @@ const connectIO = () => {
       })
       socket.value.on('terminal_connect_shell_success', () => {
         curStatus.value = CONNECT_SUCCESS
-        handleResize()
         if (initCommand.value) socket.value.emit('input', initCommand.value + '\n')
       })
 
@@ -351,22 +302,22 @@ const connectIO = () => {
     })
 
     socket.value.on('terminal_print_info', (msg) => {
-      term.value.write(`${ msg }\r\n`)
+      writeTerminalOutput(`${ msg }\r\n`)
     })
 
     socket.value.on('terminal_connect_close', () => {
       curStatus.value = CONNECT_FAIL
-      term.value.write('\r\n\x1b[91m终端主动断开连接, 回车重新发起连接\x1b[0m')
+      writeTerminalOutput('\r\n\x1b[91m终端主动断开连接, 回车重新发起连接\x1b[0m')
     })
 
     socket.value.on('terminal_connect_fail', (message) => {
       curStatus.value = CONNECT_FAIL
-      term.value.write(`\r\n\x1b[91m连接终端失败: ${ message }, 回车重新发起连接\x1b[0m`)
+      writeTerminalOutput(`\r\n\x1b[91m连接终端失败: ${ message }, 回车重新发起连接\x1b[0m`)
     })
 
     socket.value.on('terminal_create_fail', (message) => {
       curStatus.value = CONNECT_FAIL
-      term.value.write(`\r\n\x1b[91m创建终端失败: ${ message }, 回车重新发起连接\x1b[0m`)
+      writeTerminalOutput(`\r\n\x1b[91m创建终端失败: ${ message }, 回车重新发起连接\x1b[0m`)
     })
 
   })
@@ -401,7 +352,7 @@ const connectIO = () => {
   socket.value.on('connect_error', (err) => {
     console.error('EasyNode服务端连接错误：', err)
     curStatus.value = CONNECT_FAIL
-    term.value.write('\r\n\x1b[91mError: 连接失败,请检查EasyNode服务端是否正常, 回车重新发起连接\x1b[0m \r\n')
+    writeTerminalOutput('\r\n\x1b[91mError: 连接失败,请检查EasyNode服务端是否正常, 回车重新发起连接\x1b[0m \r\n')
     $notification({
       title: '服务端连接失败',
       message: '请检查EasyNode服务端是否正常',
@@ -417,13 +368,13 @@ const reconnectTerminal = (isCommonTips = false, tips) => {
   socketConnected.value = false
   if (isCommonTips) {
     if (autoReconnect.value) {
-      term.value.write(`\r\n\x1b[91m${ tips },自动重连中...\x1b[0m \r\n`)
+      writeTerminalOutput(`\r\n\x1b[91m${ tips },自动重连中...\x1b[0m \r\n`)
       connectIO()
     } else {
-      term.value.write(`\r\n\x1b[91mError: ${ tips },请重新连接。([终端设置->其他设置]中开启自动重连)\x1b[0m \r\n`)
+      writeTerminalOutput(`\r\n\x1b[91mError: ${ tips },请重新连接。([终端设置->其他设置]中开启自动重连)\x1b[0m \r\n`)
     }
   } else {
-    term.value.write(`\r\n\x1b[91m${ tips }\x1b[0m \r\n`)
+    writeTerminalOutput(`\r\n\x1b[91m${ tips }\x1b[0m \r\n`)
     connectIO()
   }
 }
@@ -468,8 +419,7 @@ const createLocalTerminal = () => {
     customRules: customHighlightRules.value
   })
 
-  terminalInstance.writeln('\x1b[1;32mWelcome to EasyNode terminal\x1b[0m.')
-  terminalInstance.writeln('\x1b[1;32mAn experimental Web-SSH Terminal\x1b[0m.')
+  TERMINAL_WELCOME_LINES.forEach(line => terminalInstance.writeln(line))
   if (props.autoFocus && !props.suppressFocus) {
     terminalInstance.focus()
     emit('tab-focus', uid)
@@ -943,9 +893,11 @@ const inputCommand = (command, type = 'input', useBase64 = false) => {
 
 onMounted(async () => {
   createLocalTerminal()
+  // SSH shell 创建前先确定真实行列数，避免首屏按默认 80×24 输出后再次 reflow。
+  await nextTick()
+  shellResize()
   await getCommand()
   connectIO()
-  await nextTick()
   onData()
 })
 
@@ -1149,8 +1101,8 @@ defineExpose({
   min-height: 200px;
   position: relative;
   .terminal_container {
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
+    height: 100%;
+    background: transparent;
     :deep(.xterm) {
       height: 100%;
       padding: 8px 8px;
