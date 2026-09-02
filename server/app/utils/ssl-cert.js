@@ -2,9 +2,10 @@ import selfsigned from 'selfsigned'
 import fs from 'node:fs'
 import path from 'node:path'
 import tls from 'node:tls'
+import { httpsSelfSignedDir } from '../config/index.js'
 
-const SELF_SIGNED_CERT_FILE = 'https-selfsigned-cert.pem'
-const SELF_SIGNED_KEY_FILE = 'https-selfsigned-key.pem'
+const SELF_SIGNED_CERT_FILE = 'cert.pem'
+const SELF_SIGNED_KEY_FILE = 'key.pem'
 
 const writeFileAtomically = (targetPath, contents, mode) => {
   const temporaryPath = `${ targetPath }.${ process.pid }.tmp`
@@ -30,12 +31,18 @@ const loadPersistedCertificate = (certPath, keyPath) => {
   }
 }
 
+const ensureCertificateDirectory = storageDir => {
+  fs.mkdirSync(storageDir, { recursive: true, mode: 0o700 })
+  fs.chmodSync(storageDir, 0o700)
+}
+
 /**
  * 加载持久化的自签名证书；首次运行时生成并保存。
- * 默认保存在 app/db，Docker Compose 已持久化该目录。
+ * 默认保存在 app/db/https-selfsigned，Docker Compose 已持久化 app/db。
  * @returns {Object} 包含 cert 和 key 的对象
  */
-function generateSelfSignedCert(storageDir = path.join(process.cwd(), 'app/db')) {
+function generateSelfSignedCert(storageDir = httpsSelfSignedDir) {
+  ensureCertificateDirectory(storageDir)
   const certPath = path.join(storageDir, SELF_SIGNED_CERT_FILE)
   const keyPath = path.join(storageDir, SELF_SIGNED_KEY_FILE)
 
@@ -80,7 +87,6 @@ function generateSelfSignedCert(storageDir = path.join(process.cwd(), 'app/db'))
     ]
   })
 
-  fs.mkdirSync(storageDir, { recursive: true })
   writeFileAtomically(certPath, pems.cert, 0o644)
   writeFileAtomically(keyPath, pems.private, 0o600)
   logger.info(`已生成并持久化自签名证书: ${ certPath }`)
