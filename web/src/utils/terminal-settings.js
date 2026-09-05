@@ -49,7 +49,7 @@ export const EASY_NODE_CUSTOM_THEME_COLORS = {
 
 export function createDefaultTerminalSettings() {
   return {
-    version: 2,
+    version: 3,
     appearance: {
       activeThemeId: DEFAULT_THEME_ID,
       customThemes: [],
@@ -69,7 +69,8 @@ export function createDefaultTerminalSettings() {
     behavior: {
       autoReconnect: true,
       autoExecuteScript: false,
-      autoShowContextMenu: true
+      autoShowContextMenu: true,
+      statusBarEnabled: true
     }
   }
 }

@@ -323,6 +323,17 @@ function isValidPingTarget(ip) {
   return VALID_HOSTNAME.test(trimmed)
 }
 
+const parsePingTime = (output, isWin = false) => {
+  const text = String(output || '')
+  const match = isWin
+    ? text.match(/(?:平均|Average)\s*=\s*(\d+(?:\.\d+)?)ms/i)
+    : text.match(/(?:rtt|round-trip)[^=\r\n]*=\s*[\d.]+\/([\d.]+)\/[\d.]+(?:\/(?:[\d.]+|nan))?\s*ms/i) ||
+      text.match(/\btime[=<]\s*([\d.]+)\s*ms/i)
+  if (!match) return null
+  const latency = Number.parseFloat(match[1])
+  return Number.isFinite(latency) ? latency : null
+}
+
 const ping = (ip, timeout = 5000) => {
   return new Promise((resolve) => {
     if (!isValidPingTarget(ip)) {
@@ -347,18 +358,9 @@ const ping = (ip, timeout = 5000) => {
       } else {
         output = stdout.toString()
       }
-      // console.log('output:', output)
-      let match
-      if (isWin) {
-        match = output.match(/平均 = (\d+)ms/)
-        if (!match) {
-          match = output.match(/Average = (\d+)ms/)
-        }
-      } else {
-        match = output.match(/rtt min\/avg\/max\/mdev = [\d.]+\/([\d.]+)\/[\d.]+\/[\d.]+/)
-      }
-      if (match) {
-        resolve({ success: true, time: parseFloat(match[1]) })
+      const time = parsePingTime(output, isWin)
+      if (time !== null) {
+        resolve({ success: true, time })
       } else {
         resolve({ success: false, msg: 'Could not find time in ping output!' })
       }
@@ -440,6 +442,7 @@ export {
   normalizeIP,
   getClientIP,
   isAllowedIp,
+  parsePingTime,
   ping,
   requestWithFailover,
   timingSafeEqual

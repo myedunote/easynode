@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto'
 import ssh2Module from 'ssh2'
 const { Client: SSHClient } = ssh2Module
 import { sendNoticeAsync } from '../utils/notify.js'
-import { ping } from '../utils/tools.js'
 import { AESDecryptAsync } from '../utils/encrypt.js'
 import { KeyDB, HostListDB, CredentialsDB, ProxyDB } from '../utils/db-class.js'
 import decryptAndExecuteAsync from '../utils/decrypt-file.js'
@@ -689,15 +688,6 @@ function createServerIo(serverIo) {
       sessionManager.destroySession(sessionId)
       socket.emit('session_destroyed', { sessionId })
       logger.info(`挂起会话已销毁: ${ sessionId }`)
-    })
-
-    // ping检测
-    socket.on('get_ping', async (ip) => {
-      try {
-        socket.emit('ping_data', await ping(ip, 2500))
-      } catch (error) {
-        socket.emit('ping_data', { success: false, msg: error.message })
-      }
     })
 
     // 断开连接处理

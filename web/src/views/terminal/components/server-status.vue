@@ -14,10 +14,26 @@
           </div>
         </template>
         <span class="host-info-ip" :title="host">{{ host }}</span>
-        <el-tooltip effect="dark" content="该值为EasyNode服务端主机到目标主机的ping值" placement="bottom">
+        <LatencyDetail
+          :total="pingValue"
+          :local-to-service="localToServiceMs"
+          :service-to-instance="serviceToInstanceMs"
+          :instance-timed-out="instanceTimedOut"
+        >
           <span class="host-ping" :style="{backgroundColor: handlePingColor(pingValue)}">{{ pingText }}</span>
-        </el-tooltip>
+        </LatencyDetail>
         <el-tag size="small" style="cursor: pointer;margin-left: 10px;" @click="handleCopy">复制</el-tag>
+        <el-tooltip content="重新连接状态监控" placement="bottom" :show-after="300">
+          <el-button
+            class="monitor-reconnect-button"
+            link
+            :loading="manualReconnectPending"
+            aria-label="重新连接状态监控"
+            @click="handleManualReconnect"
+          >
+            <el-icon v-if="!manualReconnectPending"><RefreshRight /></el-icon>
+          </el-button>
+        </el-tooltip>
       </el-descriptions-item>
 
       <el-descriptions-item>
@@ -214,13 +230,15 @@
 <script setup>
 import { ref, computed, getCurrentInstance, watch, onBeforeUnmount, nextTick, onMounted, toRaw, shallowRef } from 'vue'
 import { Chart, registerables } from 'chart.js'
-import { generateSocketInstance } from '@/utils'
+import { RefreshRight } from '@element-plus/icons-vue'
+import { useServerStatus } from '@/composables/useServerStatus'
 import clipboard from '@/utils/clipboard'
+import LatencyDetail from './latency-detail.vue'
 
 // 注册Chart.js所有组件
 Chart.register(...registerables)
 
-const { proxy: { $message, $tools, $store } } = getCurrentInstance()
+const { proxy: { $tools, $store } } = getCurrentInstance()
 
 const props = defineProps({
   hostId: {
@@ -230,44 +248,25 @@ const props = defineProps({
   visible: {
     required: true,
     type: Boolean
-  },
-  pingMs: {
-    required: true,
-    type: [Number, String,]
   }
 })
 
-const pingValue = computed(() => {
-  const value = Number(props.pingMs)
-  return Number.isFinite(value) && value > 0 ? value : null
-})
-const pingText = computed(() => pingValue.value ? `${ pingValue.value }ms` : 'TO')
+const {
+  serverData,
+  isReconnecting: manualReconnectPending,
+  localToServiceMs,
+  serviceToInstanceMs,
+  estimatedTotalMs,
+  reconnect
+} = useServerStatus(() => props.hostId, () => props.visible)
 
-// 状态数据
-const serverData = ref({
-  connect: false,
-  cpuInfo: {},
-  memInfo: {},
-  swapInfo: {},
-  drivesInfo: [{
-    filesystem: '',
-    mountedOn: '',
-    totalGb: '--',
-    usedGb: '--',
-    freeGb: '--',
-    usedPercentage: 0,
-    freePercentage: 0
-  },],
-  netstatInfo: {},
-  osInfo: {}
-})
-
-const socket = ref(null)
-const reconnectTimer = ref(null)
-const reconnectAttempts = ref(0)
-const maxReconnectAttempts = 10
-const reconnectInterval = 3000 // 3秒重连间隔
-const isConnecting = ref(false)
+const instanceTimedOut = computed(() => Boolean(
+  serverData.value.connect &&
+  serverData.value.latency?.measuredAt &&
+  !serverData.value.latency?.serviceToInstanceAvailable
+))
+const pingValue = computed(() => estimatedTotalMs.value)
+const pingText = computed(() => pingValue.value === null ? 'TO' : `${ pingValue.value }ms`)
 
 // 数据陈旧检测相关
 const dataHistory = ref([]) // 记录最近的数据快照
@@ -332,14 +331,6 @@ const input = computed(() => {
   if (inputMb >= 1) return `${ inputMb.toFixed(2) } MB/s`
   return `${ (inputMb * 1024).toFixed(1) } KB/s`
 })
-
-// 清理重连定时器
-const clearReconnectTimer = () => {
-  if (reconnectTimer.value) {
-    clearTimeout(reconnectTimer.value)
-    reconnectTimer.value = null
-  }
-}
 
 // 清理数据历史记录
 const clearDataHistory = () => {
@@ -426,187 +417,13 @@ const checkStaleData = (cpuUsage, uploadMb, downloadMb, uptime, memoryUsage, loa
 const triggerStaleDataReconnect = () => {
   console.warn('server-status: 检测到连续n次相同数据，触发重连...')
   clearDataHistory() // 清除历史记录，避免重连后立即再次触发
-
-  // 断开当前连接
-  if (socket.value) {
-    socket.value.disconnect()
-    socket.value = null
-  }
-
-  // 延迟一小段时间后重新连接
-  setTimeout(() => {
-    if (props.visible && props.hostId) {
-      console.log('server-status: 陈旧数据重连中...')
-      connectWebSocket()
-    }
-  }, 1000)
+  reconnect()
 }
 
-// 启动重连
-const startReconnect = () => {
-  if (reconnectAttempts.value >= maxReconnectAttempts) {
-    console.warn('server-status websocket 已达到最大重连次数，停止重连')
-    return
-  }
-
-  clearReconnectTimer()
-
-  reconnectTimer.value = setTimeout(() => {
-    if (props.visible && props.hostId && !isConnecting.value) {
-      reconnectAttempts.value++
-      console.log(`server-status websocket 尝试重连 (${ reconnectAttempts.value }/${ maxReconnectAttempts })`)
-      connectWebSocket()
-    }
-  }, reconnectInterval)
+const handleManualReconnect = () => {
+  clearDataHistory()
+  reconnect()
 }
-
-// WebSocket连接函数
-const connectWebSocket = () => {
-  if (isConnecting.value) {
-    return
-  }
-
-  isConnecting.value = true
-
-  // 如果已有连接，先断开
-  if (socket.value) {
-    socket.value.disconnect()
-    socket.value = null
-  }
-
-  try {
-    socket.value = generateSocketInstance('/server-status')
-
-    socket.value.on('connect', () => {
-      console.log('server-status websocket 已连接:', socket.value.id)
-      isConnecting.value = false
-      reconnectAttempts.value = 0 // 重置重连计数器
-      clearReconnectTimer()
-
-      socket.value.emit('ws_server_status', { hostId: props.hostId })
-    })
-
-    socket.value.on('server_status_data', (data) => {
-      serverData.value = data
-
-      // 更新网速图表数据
-      if (data.connect && data.netstatInfo && data.netstatInfo.total) {
-        const uploadMb = data.netstatInfo.total.outputMb || 0
-        const downloadMb = data.netstatInfo.total.inputMb || 0
-        updateNetworkHistory(uploadMb, downloadMb)
-
-        // 检测数据是否陈旧（综合检测：CPU、网速、在线时间、内存、负载）
-        const currentCpuUsage = Number(data.cpuInfo?.cpuUsage) || 0
-        const currentUptime = data.osInfo?.uptime
-        const currentMemoryUsage = Number(data.memInfo?.usedMemPercentage) || 0
-        const currentLoadAvg = data.cpuInfo?.loadAvg || []
-        if (checkStaleData(currentCpuUsage, uploadMb, downloadMb, currentUptime, currentMemoryUsage, currentLoadAvg)) {
-          triggerStaleDataReconnect()
-          return // 触发重连后，不再处理后续逻辑
-        }
-      } else if (data.connect) {
-        // 连接正常但没有网络数据，也需要检测
-        const currentCpuUsage = Number(data.cpuInfo?.cpuUsage) || 0
-        const uploadMb = 0
-        const downloadMb = 0
-        const currentUptime = data.osInfo?.uptime
-        const currentMemoryUsage = Number(data.memInfo?.usedMemPercentage) || 0
-        const currentLoadAvg = data.cpuInfo?.loadAvg || []
-        if (checkStaleData(currentCpuUsage, uploadMb, downloadMb, currentUptime, currentMemoryUsage, currentLoadAvg)) {
-          triggerStaleDataReconnect()
-          return
-        }
-      }
-
-      // 如果服务器返回错误状态，停止重连并断开连接
-      if (data.error) {
-        console.warn('服务器状态监控出现关键错误:', data.errorReason)
-        // 停止重连机制
-        clearReconnectTimer()
-        clearDataHistory() // 清除数据历史
-        reconnectAttempts.value = maxReconnectAttempts // 设置为最大值，防止重连
-
-        console.warn(`服务器状态监控已停止: ${ data.errorReason }`)
-      }
-    })
-
-    socket.value.on('disconnect', (reason) => {
-      console.log('server-status websocket 连接断开:', reason)
-      isConnecting.value = false
-
-      // 只有在组件仍然可见且需要连接时才重连
-      if (props.visible && props.hostId && reason !== 'io client disconnect') {
-        startReconnect()
-      }
-    })
-
-    socket.value.on('connect_error', (error) => {
-      console.error('server-status websocket 连接出错:', error.message)
-      isConnecting.value = false
-
-      // 连接错误时启动重连
-      if (props.visible && props.hostId) {
-        startReconnect()
-      }
-    })
-
-    socket.value.on('error', (error) => {
-      console.error('server-status websocket 发生错误:', error)
-      isConnecting.value = false
-    })
-
-  } catch (error) {
-    console.error('创建 server-status websocket 连接失败:', error)
-    isConnecting.value = false
-    if (props.visible && props.hostId) {
-      startReconnect()
-    }
-  }
-}
-
-// 初始化WebSocket连接
-const initWebSocket = () => {
-  // 重置重连状态
-  reconnectAttempts.value = 0
-  clearReconnectTimer()
-  clearDataHistory() // 重置数据历史
-  connectWebSocket()
-}
-
-// 断开WebSocket连接
-const disconnectWebSocket = () => {
-  clearReconnectTimer()
-  clearDataHistory() // 清除数据历史
-  isConnecting.value = false
-
-  if (socket.value) {
-    socket.value.disconnect()
-    socket.value = null
-  }
-}
-
-// 监听hostId变化重新连接
-watch(
-  () => props.hostId,
-  (newHostId) => {
-    if (newHostId && props.visible) {
-      initWebSocket()
-    }
-  },
-  { immediate: true }
-)
-
-// 监听visible变化
-watch(
-  () => props.visible,
-  (newVisible) => {
-    if (newVisible && props.hostId) {
-      initWebSocket()
-    } else if (!newVisible) {
-      disconnectWebSocket()
-    }
-  }
-)
 
 // 工具函数
 const handleCopy = () => {
@@ -759,6 +576,33 @@ const updateNetworkHistory = (uploadMb, downloadMb) => {
   }
 }
 
+watch(serverData, (data) => {
+  if (!data.connect) {
+    if (data.error) {
+      clearDataHistory()
+      console.warn(`服务器状态监控已停止: ${ data.errorReason }`)
+    }
+    return
+  }
+
+  const uploadMb = data.netstatInfo?.total?.outputMb || 0
+  const downloadMb = data.netstatInfo?.total?.inputMb || 0
+  if (data.netstatInfo?.total) updateNetworkHistory(uploadMb, downloadMb)
+
+  const currentCpuUsage = Number(data.cpuInfo?.cpuUsage) || 0
+  const currentUptime = data.osInfo?.uptime
+  const currentMemoryUsage = Number(data.memInfo?.usedMemPercentage) || 0
+  const currentLoadAvg = data.cpuInfo?.loadAvg || []
+  if (checkStaleData(currentCpuUsage, uploadMb, downloadMb, currentUptime, currentMemoryUsage, currentLoadAvg)) {
+    triggerStaleDataReconnect()
+  }
+})
+
+watch(
+  () => [props.hostId, props.visible,],
+  clearDataHistory
+)
+
 onMounted(() => {
   // 等待DOM渲染完成后初始化图表
   nextTick(() => {
@@ -779,9 +623,6 @@ onBeforeUnmount(() => {
     download: [],
     timestamps: []
   }
-
-  // 清理WebSocket连接和重连定时器
-  disconnectWebSocket()
 })
 </script>
 
@@ -789,6 +630,15 @@ onBeforeUnmount(() => {
 .info_container {
   transition: all 0.15s;
   height: 100%;
+
+  .monitor-reconnect-button {
+    min-height: 20px;
+    margin-left: 4px;
+    padding: 2px;
+    color: var(--el-text-color-secondary);
+
+    &:hover { color: var(--el-color-primary); }
+  }
 
   // 连接状态指示器
   .connection-status {

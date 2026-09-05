@@ -63,13 +63,16 @@
             :suppress-focus="props.suppressFocus"
             :is-single-window="true"
             @input-command="(cmd, uid) => handleInputCommand(cmd, uid, panel.terminal.key)"
-            @ping-data="getPingData"
             @reset-long-press="resetLongPress"
             @tab-focus="handleTabFocus"
             @request-suspend="() => handleRequestSuspendSingle(panel.terminal)"
             @terminal-ai-input="(text) => emit('terminal-ai-input', panel.terminal, text)"
           />
         </div>
+        <ServerStatusBar
+          v-if="props.showStatusBar"
+          :host-id="panel.terminal.id"
+        />
         <el-dialog
           v-model="scriptInputStates[panel.terminal.key]"
           title="脚本输入"
@@ -110,6 +113,7 @@ import { terminalStatusList, terminalStatus } from '@/utils/enum'
 import ScriptInput from './script-input.vue'
 import PlusLimitTip from '@/components/common/PlusLimitTip.vue'
 import TerminalWorkspaceBackground from './terminal-workspace-background.vue'
+import ServerStatusBar from './server-status-bar.vue'
 import { useContextMenu } from '@/composables/useContextMenu'
 import { useTerminalTabContextMenu } from '@/composables/useTerminalTabContextMenu'
 
@@ -141,6 +145,10 @@ const props = defineProps({
   suppressFocus: {
     type: Boolean,
     default: false
+  },
+  showStatusBar: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -150,7 +158,7 @@ const containerRef = ref(null)
 const { proxy: { $message } } = getCurrentInstance()
 const { showMenu } = useContextMenu()
 
-const emit = defineEmits(['close-terminal', 'terminal-input', 'ping-data', 'reset-long-press', 'suspend-terminal', 'terminal-ai-input', 'terminal-focus',])
+const emit = defineEmits(['close-terminal', 'terminal-input', 'reset-long-press', 'suspend-terminal', 'terminal-ai-input', 'terminal-focus',])
 
 // 响应式数据
 const focusedTerminalKey = ref(null)
@@ -674,10 +682,6 @@ const handleTabFocus = (uid) => {
   }
 }
 
-const getPingData = (data) => {
-  emit('ping-data', data)
-}
-
 const resetLongPress = () => {
   emit('reset-long-press')
 }
@@ -905,6 +909,12 @@ watch(() => props.layoutMode, () => {
         ref?.handleResize()
       })
     }, 100)
+  })
+})
+
+watch(() => props.showStatusBar, () => {
+  nextTick(() => {
+    Object.values(terminalRefs.value).forEach(ref => ref?.handleResize())
   })
 })
 
@@ -1141,7 +1151,7 @@ defineExpose({
 
 .terminal_content {
   flex: 1;
-  min-height: 218px; /* 250px - 32px(标题栏) = 218px，确保终端内容区域有足够的高度 */
+  min-height: 190px; /* 为标题栏和底部状态条预留空间 */
   overflow: hidden;
 }
 

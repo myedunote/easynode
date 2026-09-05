@@ -205,8 +205,8 @@
         :long-press-alt="longPressAlt"
         :layout-mode="layoutMode"
         :suppress-focus="showTerminalAi"
+        :show-status-bar="statusBarEnabled"
         @close-terminal="handleCloseTerminalSingle"
-        @ping-data="getPingData"
         @reset-long-press="resetLongPress"
         @suspend-terminal="handleSuspendTerminalSingleDone"
         @terminal-focus="handleSingleWindowTerminalFocus"
@@ -311,49 +311,53 @@
             >
               <ServerStatus
                 ref="infoSideRef"
-                :visible="showInfoSide"
+                :visible="showInfoSide && isActiveTerminalTab(index)"
                 :host-id="item.id"
-                :ping-ms="pingData[item.host] || 0"
               />
             </el-drawer>
             <!-- PC端 -->
             <div v-else :class="['tab_content_main_info_side', { 'show_info_side': showInfoSide }]">
               <ServerStatus
                 ref="infoSideRef"
-                :visible="showInfoSide"
+                :visible="showInfoSide && isActiveTerminalTab(index)"
                 :host-id="item.id"
-                :ping-ms="pingData[item.host] || 0"
               />
             </div>
-            <div
-              class="tab_content_main_terminals"
-              :class="getSplitContainerClass(item.key)"
-            >
-              <TerminalWorkspaceBackground v-if="isActiveTerminalTab(index)" />
-              <template v-for="panelIndex in getTerminalCount(item.key)" :key="`${item.key}-${panelIndex}`">
-                <div
-                  class="terminal_item"
-                  :class="getSplitItemClass(item.key, panelIndex)"
-                  @click="setActiveSplit(item.key, panelIndex)"
-                >
-                  <Terminal
-                    ref="terminalRefs"
-                    :host-obj="item"
-                    :long-press-ctrl="longPressCtrl"
-                    :long-press-alt="longPressAlt"
-                    :auto-focus="panelIndex === 1"
-                    :suppress-focus="showTerminalAi"
-                    :show-sftp-side="showSftpSide"
-                    @input-command="(cmd, uid) => terminalInput(cmd, uid)"
-                    @ping-data="getPingData"
-                    @reset-long-press="resetLongPress"
-                    @tab-focus="handleTabFocus"
-                    @sync-path-to-sftp="(path) => handleSyncPathToSftp(path)"
-                    @request-suspend="() => handleSuspendTerminal(item, index)"
-                    @terminal-ai-input="(text) => handleTerminalAiInput(item, text)"
-                  />
-                </div>
-              </template>
+            <div class="tab_content_main_terminal_column">
+              <div
+                class="tab_content_main_terminals"
+                :class="getSplitContainerClass(item.key)"
+              >
+                <TerminalWorkspaceBackground v-if="isActiveTerminalTab(index)" />
+                <template v-for="panelIndex in getTerminalCount(item.key)" :key="`${item.key}-${panelIndex}`">
+                  <div
+                    class="terminal_item"
+                    :class="getSplitItemClass(item.key, panelIndex)"
+                    @click="setActiveSplit(item.key, panelIndex)"
+                  >
+                    <Terminal
+                      ref="terminalRefs"
+                      :host-obj="item"
+                      :long-press-ctrl="longPressCtrl"
+                      :long-press-alt="longPressAlt"
+                      :auto-focus="panelIndex === 1"
+                      :suppress-focus="showTerminalAi"
+                      :show-sftp-side="showSftpSide"
+                      @input-command="(cmd, uid) => terminalInput(cmd, uid)"
+                      @reset-long-press="resetLongPress"
+                      @tab-focus="handleTabFocus"
+                      @sync-path-to-sftp="(path) => handleSyncPathToSftp(path)"
+                      @request-suspend="() => handleSuspendTerminal(item, index)"
+                      @terminal-ai-input="(text) => handleTerminalAiInput(item, text)"
+                    />
+                  </div>
+                </template>
+              </div>
+              <ServerStatusBar
+                v-if="statusBarEnabled && !showInfoSide"
+                :host-id="item.id"
+                :visible="isActiveTerminalTab(index)"
+              />
             </div>
 
             <el-drawer
@@ -481,6 +485,7 @@ import { useContextMenu } from '@/composables/useContextMenu'
 import { useTerminalTabContextMenu } from '@/composables/useTerminalTabContextMenu'
 import Terminal from './terminal.vue'
 import ServerStatus from './server-status.vue'
+import ServerStatusBar from './server-status-bar.vue'
 import HostForm from '../../server/components/host-form.vue'
 import TerminalSettingsDialog from './terminal-settings-dialog.vue'
 import FooterBar from './footer-bar.vue'
@@ -507,7 +512,6 @@ const hostGroupAll = 'host-group-all-'
 const { isMobileScreen } = useMobileWidth()
 const { showMenu } = useContextMenu()
 const infoSideRef = ref(null)
-const pingData = ref({})
 const terminalRefs = ref([])
 // const sftpRefs = ref([])
 const activeTabIndex = ref(0)
@@ -526,6 +530,7 @@ const showSettings = ref(false)
 const isFullscreen = ref(false)
 const showSessionSetting = ref(false)
 const showInfoSide = ref(isMobileScreen.value ? false : localStorage.getItem('showInfoSide') !== 'false')
+const statusBarEnabled = computed(() => $store.terminalSettings.behavior.statusBarEnabled !== false)
 const showTerminalAi = ref(isMobileScreen.value ? false : localStorage.getItem('showTerminalAi') === 'true')
 const showSftpSide = ref(isMobileScreen.value
   ? false
@@ -1019,10 +1024,6 @@ const terminalInput = (command, uid) => {
   })
 }
 
-const getPingData = ({ host, time }) => {
-  pingData.value[host] = time
-}
-
 const handleSyncPathToSftp = (path) => {
   // 获取当前标签页的SFTP组件引用
   const sftpRef = sftpRefs.value[activeTabIndex.value]
@@ -1053,7 +1054,7 @@ watch(
 )
 
 watch(
-  [showFooterBar, showInfoSide, showSftpSide, showTerminalAi,],
+  [showFooterBar, showInfoSide, showSftpSide, showTerminalAi, statusBarEnabled,],
   () => {
     setTimeout(async () => {
       resizeTerminal()
@@ -1515,10 +1516,20 @@ onUnmounted(() => {
           }
         }
 
-        .tab_content_main_terminals {
-          height: 100%;
+        .tab_content_main_terminal_column {
           flex: 1;
           min-width: 300px;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .tab_content_main_terminals {
+          height: auto;
+          min-height: 0;
+          flex: 1;
+          min-width: 0;
           display: flex;
           position: relative;
           z-index: 1;

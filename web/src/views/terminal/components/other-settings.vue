@@ -50,6 +50,22 @@
           />
         </el-tooltip>
       </el-form-item>
+      <el-form-item label="底部状态栏" prop="statusBarEnabled">
+        <el-tooltip
+          effect="dark"
+          content="展示延迟、CPU、内存和实时网速；展开服务器状态侧栏时会自动隐藏"
+          placement="right"
+        >
+          <el-switch
+            v-model="statusBarEnabled"
+            class="switch"
+            inline-prompt
+            style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949"
+            active-text="开启"
+            inactive-text="关闭"
+          />
+        </el-tooltip>
+      </el-form-item>
     </el-form>
   </div>
 </template>
@@ -72,6 +88,11 @@ const autoExecuteScript = computed({
 const autoShowContextMenu = computed({
   get: () => $store.terminalSettings.behavior.autoShowContextMenu,
   set: (newVal) => $store.setTerminalBehavior({ autoShowContextMenu: newVal })
+})
+
+const statusBarEnabled = computed({
+  get: () => $store.terminalSettings.behavior.statusBarEnabled !== false,
+  set: (newVal) => $store.setTerminalBehavior({ statusBarEnabled: newVal })
 })
 
 </script>

@@ -474,7 +474,7 @@ const filteredThemes = computed(() => {
     ? allThemes.value.filter(theme => theme.name.toLocaleLowerCase().includes(query))
     : allThemes.value
 })
-const draftSettings = computed(() => ({ version: 2, appearance: draftAppearance.value }))
+const draftSettings = computed(() => ({ version: 3, appearance: draftAppearance.value }))
 const selectedTerminalTheme = computed(() => resolveThemeEntity(draftSettings.value))
 const selectedHtmlTheme = computed(() => getTerminalHtmlTheme(
   draftAppearance.value.background.htmlThemeId || DEFAULT_TERMINAL_HTML_THEME_ID,

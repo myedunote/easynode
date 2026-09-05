@@ -2,10 +2,48 @@ import ssh2Module from 'ssh2'
 const { Client: SSHClient } = ssh2Module
 import { createTerminal } from './terminal.js'
 import { createSecureWs } from '../utils/ws-tool.js'
+import { ping } from '../utils/tools.js'
 const monitorMap = new Map() // key -> { sockets: Set, statusData, stop }
 const pendingConnections = new Map() // key -> Promise，跟踪正在创建的连接
+const pendingRestarts = new Map() // key -> Promise，防止重复重建监控 SSH
+const lastRestartAt = new Map()
+const socketSubscriptions = new WeakMap()
+const MANUAL_RECONNECT_COOLDOWN = 3000
+const STATUS_SSH_CONNECT_TIMEOUT = 15000
 import { HostListDB } from '../utils/db-class.js'
 const hostListDB = new HostListDB().getInstance()
+
+const createEmptyStatusData = () => ({
+  connect: false,
+  cpuInfo: {},
+  memInfo: {},
+  swapInfo: {},
+  drivesInfo: [],
+  netstatInfo: {},
+  osInfo: {},
+  latency: {
+    serviceToInstanceMs: null,
+    serviceToInstanceAvailable: false,
+    measuredAt: null
+  }
+})
+
+const createStatusTerminal = async (hostId, socket, sshClient) => {
+  let timeout
+  const timeoutPromise = new Promise(resolve => {
+    timeout = setTimeout(resolve, STATUS_SSH_CONNECT_TIMEOUT)
+  }).then(() => {
+    throw new Error('监控 SSH 连接超时')
+  })
+  try {
+    return await Promise.race([
+      createTerminal(hostId, socket, sshClient, false),
+      timeoutPromise
+    ])
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 function stripAnsi(s = '') {
   return s
@@ -29,10 +67,104 @@ export default (httpServer) => {
     let jumpSshClients = []
     let monitorTimer = null
     let sendDataTimer = null
+    let latencyTimer = null
     let lastNetStats = null // 用于计算网络速率
     let previousCpuStats = null // 用于计算CPU使用率
     let defaultNetInterface = null // 默认网络接口
     let monitorKey = null // 全连接生命周期的主机键
+    let latencyTarget = null
+    let latencyPingInFlight = false
+    const serviceLatencyHistory = []
+
+    socket.on('latency_probe', (payload = {}, acknowledge) => {
+      if (typeof acknowledge !== 'function') return
+      acknowledge({
+        probeId: typeof payload.probeId === 'string' ? payload.probeId : '',
+        serverTime: Date.now()
+      })
+    })
+
+    socket.on('server_status_reconnect', async ({ hostId } = {}, acknowledge) => {
+      const reply = payload => {
+        if (typeof acknowledge === 'function') acknowledge(payload)
+      }
+
+      try {
+        const targetHostInfo = await hostListDB.findOneAsync({ _id: hostId })
+        if (!targetHostInfo) {
+          reply({ success: false, message: '主机信息不存在' })
+          return
+        }
+
+        const reconnectKey = `${ targetHostInfo.host }:${ targetHostInfo.port }`
+        const activeRestart = pendingRestarts.get(reconnectKey)
+        if (activeRestart) {
+          await activeRestart
+          if (socket.connected) {
+            socket.emit('server_status_reconnect_required')
+            socketSubscriptions.get(socket)?.subscribe({ hostId })
+          }
+          reply({ success: true, pending: true })
+          return
+        }
+
+        const elapsed = Date.now() - (lastRestartAt.get(reconnectKey) || 0)
+        if (elapsed < MANUAL_RECONNECT_COOLDOWN) {
+          if (socket.connected) {
+            socket.emit('server_status_reconnect_required')
+            socketSubscriptions.get(socket)?.subscribe({ hostId })
+          }
+          reply({ success: true, pending: true })
+          return
+        }
+
+        const restartPromise = (async () => {
+          const pendingConnection = pendingConnections.get(reconnectKey)
+          if (pendingConnection) {
+            try {
+              await pendingConnection
+            } catch {
+              // 创建失败时继续清理残留状态，并允许本次手动重连重新创建
+            }
+          }
+
+          const entry = monitorMap.get(reconnectKey)
+          const subscribers = new Set(entry?.sockets || [])
+          subscribers.add(socket)
+
+          if (entry) {
+            entry.stop()
+            monitorMap.delete(reconnectKey)
+          }
+
+          lastRestartAt.set(reconnectKey, Date.now())
+          for (const subscriber of subscribers) {
+            if (!subscriber.connected) continue
+            subscriber.emit('server_status_reconnect_required')
+            const subscription = socketSubscriptions.get(subscriber)
+            const subscriberHostId = subscription?.hostId || (subscriber === socket ? hostId : null)
+            if (subscriberHostId && subscription) {
+              subscription.subscribe({ hostId: subscriberHostId })
+            }
+          }
+
+          logger.info(`手动重建服务器监控: ${ reconnectKey }`)
+        })()
+
+        pendingRestarts.set(reconnectKey, restartPromise)
+        try {
+          await restartPromise
+          reply({ success: true })
+        } finally {
+          if (pendingRestarts.get(reconnectKey) === restartPromise) {
+            pendingRestarts.delete(reconnectKey)
+          }
+        }
+      } catch (error) {
+        logger.error('server_status_reconnect 事件处理失败:', error.message)
+        reply({ success: false, message: `重连失败: ${ error.message }` })
+      }
+    })
 
     // 新增持久化 shell相关变量与函数  -----------
     let persistentShell = null // SSH shell stream
@@ -40,14 +172,23 @@ export default (httpServer) => {
     let cmdQueue = [] // [{command, resolve, reject, marker, output}]
     let cmdCounter = 0
 
-    socket.on('ws_server_status', async ({ hostId }) => {
+    const rejectPendingCommands = (reason) => {
+      const error = new Error(reason)
+      const pendingCommands = cmdQueue.splice(0)
+      pendingCommands.forEach(command => command.reject(error))
+    }
+
+    const subscribeServerStatus = async ({ hostId } = {}) => {
       try {
+        const subscription = socketSubscriptions.get(socket)
+        if (subscription) subscription.hostId = hostId
         const targetHostInfo = await hostListDB.findOneAsync({ _id: hostId })
         if (!targetHostInfo) {
           socket.emit('server_status_error', '主机信息不存在')
           return
         }
         monitorKey = `${ targetHostInfo.host }:${ targetHostInfo.port }`
+        latencyTarget = targetHostInfo.host
 
         // 如果已有监控，直接复用
         if (monitorMap.has(monitorKey)) {
@@ -55,14 +196,6 @@ export default (httpServer) => {
           entry.sockets.add(socket)
           // 立即推送现有数据
           socket.emit('server_status_data', entry.statusData)
-          // 处理断连
-          socket.on('disconnect', () => {
-            entry.sockets.delete(socket)
-            if (entry.sockets.size === 0) {
-              entry.stop() // 停止监控并关闭 SSH
-              monitorMap.delete(monitorKey)
-            }
-          })
           return // 不再往下创建新的 SSH
         }
 
@@ -76,13 +209,6 @@ export default (httpServer) => {
               const entry = monitorMap.get(monitorKey)
               entry.sockets.add(socket)
               socket.emit('server_status_data', entry.statusData)
-              socket.on('disconnect', () => {
-                entry.sockets.delete(socket)
-                if (entry.sockets.size === 0) {
-                  entry.stop()
-                  monitorMap.delete(monitorKey)
-                }
-              })
               return
             }
           } catch (error) {
@@ -93,8 +219,9 @@ export default (httpServer) => {
         // 创建新连接的Promise
         const createConnectionPromise = (async () => {
           try {
+            statusData = createEmptyStatusData()
             targetSSHClient = new SSHClient()
-            let { jumpSshClients: statusJumpSshClients } = await createTerminal(hostId, socket, targetSSHClient, false)
+            let { jumpSshClients: statusJumpSshClients } = await createStatusTerminal(hostId, socket, targetSSHClient)
             jumpSshClients.push(...statusJumpSshClients || [])
 
             await initPersistentShell()
@@ -108,16 +235,6 @@ export default (httpServer) => {
             }
             const entryObj = { sockets: new Set([socket]), statusData, stop: stopAll }
             monitorMap.set(monitorKey, entryObj)
-
-            // 处理当前 socket 断连
-            socket.on('disconnect', (reason) => {
-              entryObj.sockets.delete(socket)
-              if (entryObj.sockets.size === 0) {
-                stopAll()
-                monitorMap.delete(monitorKey)
-              }
-              logger.info(`server-status socket断开: ${ reason }`)
-            })
 
             logger.info(`成功创建服务器监控: ${ monitorKey }`)
             return entryObj
@@ -148,7 +265,10 @@ export default (httpServer) => {
 
         logger.info(`连接失败后已清理资源: ${ monitorKey || 'unknown' }`)
       }
-    })
+    }
+
+    socketSubscriptions.set(socket, { hostId: null, subscribe: subscribeServerStatus })
+    socket.on('ws_server_status', subscribeServerStatus)
 
     // 初始化持久化 shell
     const initPersistentShell = async () => {
@@ -169,6 +289,7 @@ export default (httpServer) => {
 
           let buffer = ''
           const handleData = (data) => {
+            if (persistentShell !== stream) return
             buffer += data.toString()
             // 逐行处理，防止分包
             let index
@@ -194,8 +315,14 @@ export default (httpServer) => {
 
           stream.on('data', handleData)
           stream.on('close', () => {
+            if (persistentShell !== stream) return
+            rejectPendingCommands('监控 SSH Shell 已关闭')
             shellReady = false
             persistentShell = null
+            statusData = {
+              ...statusData,
+              connect: false
+            }
             logger.warn('server-status: 持久化 shell 已关闭')
           })
           resolve()
@@ -234,15 +361,7 @@ export default (httpServer) => {
     }
 
     // 服务器状态数据（外层维护，提升及时性）
-    let statusData = {
-      connect: false,
-      cpuInfo: {},
-      memInfo: {},
-      swapInfo: {},
-      drivesInfo: [],
-      netstatInfo: {},
-      osInfo: {}
-    }
+    let statusData = createEmptyStatusData()
 
     // 统一的资源清理函数
     const cleanupResources = (reason = 'unknown') => {
@@ -255,9 +374,14 @@ export default (httpServer) => {
         clearInterval(sendDataTimer)
         sendDataTimer = null
       }
+      if (latencyTimer) {
+        clearInterval(latencyTimer)
+        latencyTimer = null
+      }
 
       // 清理持久化 shell
       if (persistentShell) {
+        rejectPendingCommands(`监控已停止: ${ reason }`)
         persistentShell.end?.()
         persistentShell = null
       }
@@ -277,6 +401,9 @@ export default (httpServer) => {
       lastNetStats = null
       previousCpuStats = null
       defaultNetInterface = null
+      latencyTarget = null
+      latencyPingInFlight = false
+      serviceLatencyHistory.length = 0
 
       // 清理静态系统信息缓存（可选，如果希望下次重新获取）
       staticSystemInfo = {
@@ -1059,6 +1186,45 @@ export default (httpServer) => {
       }
     }
 
+    const updateServiceLatency = async () => {
+      if (!latencyTarget || latencyPingInFlight) return
+      latencyPingInFlight = true
+      try {
+        const result = await ping(latencyTarget, 2500)
+        const latencyMs = Number(result?.time)
+        if (!result?.success || !Number.isFinite(latencyMs) || latencyMs < 0) {
+          statusData.latency = {
+            serviceToInstanceMs: null,
+            serviceToInstanceAvailable: false,
+            measuredAt: Date.now()
+          }
+          return
+        }
+
+        serviceLatencyHistory.push(latencyMs)
+        if (serviceLatencyHistory.length > 5) serviceLatencyHistory.shift()
+        const sorted = [...serviceLatencyHistory].sort((a, b) => a - b)
+        const middle = Math.floor(sorted.length / 2)
+        const median = sorted.length % 2
+          ? sorted[middle]
+          : (sorted[middle - 1] + sorted[middle]) / 2
+        statusData.latency = {
+          serviceToInstanceMs: Number(median.toFixed(1)),
+          serviceToInstanceAvailable: true,
+          measuredAt: Date.now()
+        }
+      } catch (error) {
+        logger.warn(`server-status: 获取服务端到实例延迟失败: ${ error.message }`)
+        statusData.latency = {
+          serviceToInstanceMs: null,
+          serviceToInstanceAvailable: false,
+          measuredAt: Date.now()
+        }
+      } finally {
+        latencyPingInFlight = false
+      }
+    }
+
     // 更新所有服务器状态信息（改为增量更新模式）
     const updateServerStatus = async () => {
       try {
@@ -1117,11 +1283,14 @@ export default (httpServer) => {
 
       // 立即执行一次数据收集
       collectData()
+      updateServiceLatency()
 
       // 每n秒收集一次数据
       monitorTimer = setInterval(collectData, 2000)
       // 每n秒发送一次数据
       sendDataTimer = setInterval(sendData, 1500)
+      // 每3秒测量一次 EasyNode 服务端到实例的网络延迟
+      latencyTimer = setInterval(updateServiceLatency, 3000)
     }
 
     socket.on('disconnect', (reason) => {

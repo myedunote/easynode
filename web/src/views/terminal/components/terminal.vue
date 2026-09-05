@@ -76,7 +76,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['inputCommand', 'ping-data', 'reset-long-press', 'tab-focus', 'sync-path-to-sftp', 'request-suspend', 'terminal-ai-input',])
+const emit = defineEmits(['inputCommand', 'reset-long-press', 'tab-focus', 'sync-path-to-sftp', 'request-suspend', 'terminal-ai-input',])
 
 const socket = ref(null)
 const aiCommandRequests = new Map()
@@ -86,7 +86,6 @@ const term = ref(null)
 const highlighter = ref(null)
 const initCommand = ref('')
 const timer = ref(null)
-const pingTimer = ref(null)
 const fitAddon = ref(null)
 const searchAddon = ref(null)
 const searchBarRef = ref(null) // TerminalSearch组件引用
@@ -109,7 +108,6 @@ const fontSize = computed(() => terminalSettings.value.appearance.font.size)
 const fontFamily = computed(() => terminalSettings.value.appearance.font.family)
 const hostObj = computed(() => props.hostObj)
 const hostId = computed(() => hostObj.value.id)
-const host = computed(() => hostObj.value.host)
 const menuCollapse = computed(() => $store.menuCollapse)
 const autoExecuteScript = computed(() => terminalSettings.value.behavior.autoExecuteScript)
 const autoReconnect = computed(() => terminalSettings.value.behavior.autoReconnect)
@@ -289,16 +287,6 @@ const connectIO = () => {
       //   console.log(data)
       //   commandHistoryList.value = data
       // })
-    })
-
-    if (pingTimer.value) clearInterval(pingTimer.value)
-    pingTimer.value = setInterval(() => {
-      socket.value?.emit('get_ping', host.value)
-    }, 3000)
-    socket.value.emit('get_ping', host.value) // 获取服务端到客户端的ping值
-    socket.value.on('ping_data', (pingMs) => {
-      const time = Number(pingMs?.time)
-      emit('ping-data', { host: host.value, time: Number.isFinite(time) ? time.toFixed(0) : 0 })
     })
 
     socket.value.on('terminal_print_info', (msg) => {
@@ -909,7 +897,6 @@ onBeforeUnmount(() => {
   }
   socket.value?.close()
   window.removeEventListener('resize', handleResize)
-  clearInterval(pingTimer.value)
   tempPathSyncCallback.value = null
 })
 

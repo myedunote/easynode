@@ -10,12 +10,12 @@
     "start": "node ./index.js",
     "lint": "eslint . --ext .js,.vue",
     "lint:fix": "eslint . --ext .js,.jsx,.cjs,.mjs --fix",
-    "test": "node test/test-order-service.js && node test/test-onekey-execution.js && node test/test-terminal-settings.js && node test/test-login-attempt-limiter.js && node test/test-auth-session.js && node test/test-ip-access.js && node test/test-sftp-cache-path.js && node test/test-rsync-command.js && node test/test-cookie-config.js && node test/test-rest-api-auth.js && node test/test-ws-comprehensive.js",
-    "test:security": "node test/test-login-attempt-limiter.js && node test/test-auth-session.js && node test/test-ip-access.js && node test/test-sftp-cache-path.js && node test/test-rsync-command.js && node test/test-cookie-config.js && node test/test-ssl-cert-persistence.js",
-    "test:api": "node test/test-rest-api-auth.js",
-    "test:ws": "node test/test-ws-comprehensive.js",
-    "test:mobile": "node test/test-mobile-crypto.js && node test/test-mobile-ssh-payload.js",
-    "test:ai": "node test/test-ai-config.js && node test/test-ai-session-run-lock.js && node test/test-ai-safety.js && node test/test-ai-session.js && node test/test-ai-compaction.js && node test/test-ai-access.js && node test/test-ai-data.js && node test/test-ai-mcp.js"
+    "test": "node test/run-suite.js",
+    "test:security": "node test/run-suite.js security",
+    "test:api": "node test/run-suite.js api",
+    "test:ws": "node test/run-suite.js ws",
+    "test:mobile": "node test/run-suite.js mobile",
+    "test:ai": "node test/run-suite.js ai"
   },
   "keywords": [],
   "author": "",

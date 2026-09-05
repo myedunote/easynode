@@ -52,7 +52,8 @@ assert.equal(migrated.appearance.background.mode, 'theme')
 assert.deepEqual(migrated.behavior, {
   autoReconnect: false,
   autoExecuteScript: true,
-  autoShowContextMenu: false
+  autoShowContextMenu: false,
+  statusBarEnabled: true
 })
 assert.equal(migrated.highlighting.enabled, true)
 assert.equal(migrated.highlighting.builtinOverrides[0].id, 'error')
@@ -63,6 +64,17 @@ assert.deepEqual(migrated.highlighting.builtinOverrides[0].style.foreground, {
   source: 'fixed',
   value: '#ff0000'
 })
+
+const migratedV2StatusBar = clone(DEFAULT_TERMINAL_SETTINGS)
+migratedV2StatusBar.version = 2
+delete migratedV2StatusBar.behavior.statusBarEnabled
+const migratedV2Settings = migrateTerminalSettings(migratedV2StatusBar)
+assert.equal(migratedV2Settings.version, 3)
+assert.equal(migratedV2Settings.behavior.statusBarEnabled, true)
+
+const disabledStatusBar = clone(DEFAULT_TERMINAL_SETTINGS)
+disabledStatusBar.behavior.statusBarEnabled = false
+assert.equal(terminalSettingsSchema.safeParse(disabledStatusBar).success, true)
 
 const migratedWithInvalidRule = migrateTerminalSettings({
   keywordHighlight: true,

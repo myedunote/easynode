@@ -117,7 +117,7 @@ export const highlightRuleSchema = z.strictObject({
 })
 
 export const terminalSettingsSchema = z.strictObject({
-  version: z.literal(2),
+  version: z.literal(3),
   appearance: z.strictObject({
     activeThemeId: z.string().refine(
       value => builtinThemeIdPattern.test(value) || customThemeIdPattern.test(value),
@@ -161,7 +161,8 @@ export const terminalSettingsSchema = z.strictObject({
   behavior: z.strictObject({
     autoReconnect: z.boolean(),
     autoExecuteScript: z.boolean(),
-    autoShowContextMenu: z.boolean()
+    autoShowContextMenu: z.boolean(),
+    statusBarEnabled: z.boolean()
   })
 }).superRefine((settings, ctx) => {
   const ids = new Set()
@@ -220,7 +221,7 @@ export const terminalSettingsSchema = z.strictObject({
 })
 
 export const DEFAULT_TERMINAL_SETTINGS = Object.freeze({
-  version: 2,
+  version: 3,
   appearance: {
     activeThemeId: 'builtin:Cobalt_Neon',
     customThemes: [],
@@ -247,7 +248,8 @@ export const DEFAULT_TERMINAL_SETTINGS = Object.freeze({
   behavior: {
     autoReconnect: true,
     autoExecuteScript: false,
-    autoShowContextMenu: true
+    autoShowContextMenu: true,
+    statusBarEnabled: true
   }
 })
 
@@ -376,7 +378,7 @@ function normalizeV2Highlighting(highlighting = {}) {
 
 export function migrateTerminalSettings(record) {
   if (!record) return cloneDefaults()
-  if (record.version === 2) {
+  if ([2, 3].includes(record.version)) {
     const settings = { ...record }
     delete settings._id
     delete settings.createTime
@@ -409,6 +411,11 @@ export function migrateTerminalSettings(record) {
       }
     }
     settings.highlighting = normalizeV2Highlighting(settings.highlighting)
+    settings.version = 3
+    settings.behavior = {
+      ...cloneDefaults().behavior,
+      ...settings.behavior
+    }
     return terminalSettingsSchema.parse(settings)
   }
 

@@ -22,6 +22,8 @@ import {
 } from '../src/utils/terminal-html-themes.js'
 
 const settings = createDefaultTerminalSettings()
+assert.equal(settings.version, 3)
+assert.equal(settings.behavior.statusBarEnabled, true)
 assert.match(createCustomThemeId(), /^custom:[0-9a-f-]{36}$/)
 assert.match(createCustomHtmlThemeId(), /^custom-html:[0-9a-f-]{36}$/)
 assert.equal(resolveThemeEntity(settings).id, 'builtin:Cobalt_Neon')

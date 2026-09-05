@@ -86,7 +86,7 @@ const settingTabs = [
     label: '交互行为',
     name: 'other',
     title: '终端交互',
-    description: '设置自动重连、脚本执行和右键菜单行为。',
+    description: '设置自动重连、脚本执行、状态栏和右键菜单行为。',
     component: OtherSettings,
     lazy: true
   },
