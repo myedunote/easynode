@@ -1,6 +1,10 @@
 import { SessionDB } from '../utils/db-class.js'
 import { cookieSecure } from '../config/index.js'
-import { disconnectAllSessionConnections, revokeAllSessions } from '../utils/auth-session.js'
+import {
+  disconnectAllSessionConnections,
+  disconnectSessionConnections,
+  revokeAllSessions
+} from '../utils/auth-session.js'
 import { pruneLoginLogs } from '../utils/login-log.js'
 const sessionDB = new SessionDB().getInstance()
 
@@ -20,18 +24,22 @@ const revokeLoginSid = async (ctx) => {
   const { res, request, cookies } = ctx
   let { params: { id } } = request
   const session = cookies.get('session')
-  const { _id: curId, deviceId: curDeviceId } = await sessionDB.findOneAsync({ session })
-  let result = await sessionDB.updateAsync({
+  const currentSession = await sessionDB.findOneAsync({ session }) || {}
+  const { _id: curId, deviceId: curDeviceId } = currentSession
+  const targetSession = await sessionDB.findOneAsync({
     $or: [
       { _id: id },
       { deviceId: id }
     ]
-  }, { $set: { revoked: true } })
+  })
+  if (!targetSession) return res.fail({ msg: '注销凭证失败' })
+  const result = await sessionDB.updateAsync({ _id: targetSession._id }, { $set: { revoked: true } })
+  if (!result || !result.numAffected) return res.fail({ msg: '注销凭证失败' })
   if (id === curId || id === curDeviceId) {
     logger.warn('注销当前登录凭证，清除cookie')
     ctx.cookies.set('session', '', { expires: new Date(0) })
   }
-  if (!result || !result.numAffected) return res.fail({ msg: '注销凭证失败' })
+  disconnectSessionConnections(targetSession.session)
   res.success({ msg: '注销凭证成功' })
 }
 

@@ -91,6 +91,7 @@ const verifyWsAuthSync = async (socket, next) => {
     logger.warn('ws终端连接身份验证失败, code:', code)
     return next(new Error('Authentication Failed'))
   }
+  socket.data.authSession = session
   // console.log('🤓 ws terminal auth success')
   next()
 }

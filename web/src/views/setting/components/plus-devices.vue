@@ -11,17 +11,27 @@
         >
           已用 {{ usedCount }} / {{ deviceLimit }} 台
         </el-tag>
+        <el-button
+          type="primary"
+          plain
+          size="small"
+          @click="licenseDialogVisible = true"
+        >
+          增加授权
+        </el-button>
       </div>
-      <el-button
-        class="refresh_btn"
-        type="primary"
-        text
-        :icon="Refresh"
-        :loading="loading"
-        @click="fetchDevices"
-      >
-        刷新
-      </el-button>
+      <div class="header_actions">
+        <el-button
+          class="refresh_btn"
+          type="primary"
+          text
+          :icon="Refresh"
+          :loading="loading"
+          @click="fetchDevices"
+        >
+          刷新
+        </el-button>
+      </div>
     </div>
 
     <el-table
@@ -91,22 +101,58 @@
         <span class="tip_release">如需主动腾出额度，可点击对应实例的「释放」按钮。</span>
       </span>
     </div>
+
+    <el-dialog
+      v-model="licenseDialogVisible"
+      title="增加在线机器授权"
+      width="min(440px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <div class="license_content">
+        <p>如需同时在更多机器上使用，请联系作者增加额度。</p>
+        <div class="contact_info">
+          <div>Telegram：<a href="https://t.me/chaoszhu" target="_blank" rel="noopener noreferrer">@chaoszhu</a></div>
+          <div class="qq_contact">
+            <span>QQ：307205265</span>
+            <el-tooltip content="复制 QQ" placement="top">
+              <el-button
+                class="copy_btn"
+                link
+                type="primary"
+                aria-label="复制 QQ 号"
+                @click="copyQQ"
+              >
+                <el-icon><CopyDocument /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="licenseDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { Refresh, InfoFilled } from '@element-plus/icons-vue'
+import { Refresh, InfoFilled, CopyDocument } from '@element-plus/icons-vue'
+import { copyText } from '@/utils/clipboard'
 
 const { proxy: { $api, $message } } = getCurrentInstance()
 
 const loading = ref(false)
+const licenseDialogVisible = ref(false)
 const deviceLimit = ref(0)
 const devices = ref([])
 
 const usedCount = computed(() => devices.value.length)
 const isFull = computed(() => deviceLimit.value > 0 && usedCount.value >= deviceLimit.value)
+
+const copyQQ = () => copyText('307205265')
 
 const shortId = (id) => (id ? `${ String(id).slice(0, 4) }…` : '')
 
@@ -176,6 +222,7 @@ onMounted(() => {
     .header_left {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 12px;
 
       .title {
@@ -257,6 +304,42 @@ onMounted(() => {
 
     .tip_release {
       text-decoration: underline;
+    }
+  }
+}
+
+.license_content {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  line-height: 1.8;
+
+  p {
+    margin: 0 0 12px;
+  }
+
+  strong {
+    color: var(--el-color-primary);
+    font-size: 16px;
+  }
+
+  .contact_info {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--el-fill-color-light);
+
+    a {
+      color: var(--el-color-primary);
+      text-decoration: none;
+    }
+
+    .qq_contact {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+
+      .copy_btn {
+        padding: 2px;
+      }
     }
   }
 }

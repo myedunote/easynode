@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import Datastore from '@seald-io/nedb'
 import {
   disconnectAllSessionConnections,
+  disconnectSessionConnections,
   registerRdpSocket,
   registerSocketServer,
   revokeAllSessions
@@ -51,13 +52,41 @@ assert.deepEqual(
 
 let disconnectCalls = 0
 let destroyCalls = 0
+let connectionHandler
+const disconnectedRooms = []
 const closeListeners = []
 registerSocketServer({
+  on(event, handler) {
+    assert.equal(event, 'connection')
+    connectionHandler = handler
+  },
+  in(room) {
+    return {
+      disconnectSockets(close) {
+        assert.equal(close, true)
+        disconnectedRooms.push(room)
+      }
+    }
+  },
   disconnectSockets(close) {
     assert.equal(close, true)
     disconnectCalls++
   }
 })
+
+let joinedRoom
+connectionHandler({
+  data: { authSession: 'session-1' },
+  join(room) {
+    joinedRoom = room
+  }
+})
+assert.equal(joinedRoom, 'auth-session:session-1')
+disconnectSessionConnections('session-1')
+assert.deepEqual(disconnectedRooms, ['auth-session:session-1'])
+disconnectSessionConnections()
+assert.deepEqual(disconnectedRooms, ['auth-session:session-1'])
+
 registerRdpSocket({
   once(event, listener) {
     assert.equal(event, 'close')

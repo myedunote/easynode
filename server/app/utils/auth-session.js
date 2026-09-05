@@ -1,8 +1,13 @@
 const socketServers = new Set()
 const rdpSockets = new Set()
+const getSessionRoom = session => `auth-session:${ session }`
 
 const registerSocketServer = (serverIo) => {
   socketServers.add(serverIo)
+  serverIo.on('connection', (socket) => {
+    const session = socket.data?.authSession
+    if (session) socket.join(getSessionRoom(session))
+  })
   return serverIo
 }
 
@@ -25,8 +30,15 @@ const disconnectAllSessionConnections = () => {
   rdpSockets.clear()
 }
 
+const disconnectSessionConnections = (session) => {
+  if (!session) return
+  const room = getSessionRoom(session)
+  for (const serverIo of socketServers) serverIo.in(room).disconnectSockets(true)
+}
+
 export {
   disconnectAllSessionConnections,
+  disconnectSessionConnections,
   registerRdpSocket,
   registerSocketServer,
   revokeAllSessions
