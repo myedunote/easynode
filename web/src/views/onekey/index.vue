@@ -4,13 +4,21 @@
       <span class="data_page_summary">共 {{ recordList.length }} 条执行记录</span>
       <div class="toolbar_actions">
         <el-button
+          v-if="!isExecuting"
           type="primary"
           :icon="Promotion"
-          :disabled="isExecuting"
-          :loading="isExecuting"
           @click="addOnekey"
         >
-          {{ isExecuting ? `执行中，剩余 ${ timeRemaining } 秒` : '执行指令' }}
+          执行指令
+        </el-button>
+        <el-button
+          v-else
+          type="danger"
+          :icon="VideoPause"
+          :loading="stoppingAll"
+          @click="stopAll"
+        >
+          {{ stoppingAll ? '停止中' : `停止执行（剩余 ${ timeRemaining } 秒）` }}
         </el-button>
         <el-dropdown v-if="recordList.length" trigger="click">
           <el-button
@@ -39,7 +47,13 @@
       >
         <el-table-column type="expand" width="48">
           <template #default="{ row }">
-            <div class="detail_content_box">{{ row.result || '暂无输出' }}</div>
+            <div
+              :ref="element => setOutputContainer(element, getRecordKey(row))"
+              class="detail_content_box"
+              @scroll.passive="handleOutputScroll($event, getRecordKey(row))"
+            >
+              {{ row.result || '暂无输出' }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column
@@ -95,13 +109,22 @@
         <el-table-column
           label="操作"
           fixed="right"
-          width="76px"
+          width="96px"
           align="right"
           header-align="right"
         >
           <template #default="{ row }">
             <el-button
-              v-if="!row.pending && row.id !== 'own'"
+              v-if="canStopHost(row)"
+              :loading="isHostStopping(row.hostId)"
+              text
+              type="danger"
+              @click="stopHost(row)"
+            >
+              停止
+            </el-button>
+            <el-button
+              v-else-if="!row.pending && row.id !== 'own'"
               :loading="row.loading"
               text
               type="danger"
@@ -211,7 +234,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch, nextTick, getCurrentInstance } from 'vue'
-import { ArrowDown, Delete, MoreFilled, Promotion } from '@element-plus/icons-vue'
+import { ArrowDown, Delete, MoreFilled, Promotion, VideoPause } from '@element-plus/icons-vue'
 import { generateSocketInstance } from '@/utils'
 
 const { proxy: { $api, $notification, $messageBox, $message, $store, $tools } } = getCurrentInstance()
@@ -226,6 +249,12 @@ let indeterminate = ref(false)
 const updateFormRef = ref(null)
 let timeRemaining = ref(0)
 const isClient = ref(false)
+const executionState = ref('idle')
+const stoppingAll = ref(false)
+const stoppingHostIds = ref(new Set())
+const outputContainers = new Map()
+const outputFollowState = new Map()
+const OUTPUT_BOTTOM_THRESHOLD = 20
 
 let formData = reactive({
   hostIds: [],
@@ -236,20 +265,37 @@ let formData = reactive({
 const token = computed(() => $store.token)
 const hostList = computed(() => $store.hostList)
 let scriptList = computed(() => $store.scriptList)
-let isExecuting = computed(() => timeRemaining.value > 0)
+let isExecuting = computed(() => executionState.value !== 'idle')
 const hasConfigHostList = computed(() => hostList.value.filter(item => item.isConfig))
 
 const tableData = computed(() => {
-  return pendingRecord.value.concat(recordList.value).map(item => {
-    item.loading = false
-    return item
-  })
+  return pendingRecord.value.concat(recordList.value)
 })
-const getRecordKey = row => row.id || `pending-${ row.startDate }`
+const getRecordKey = row => row.id || row.hostId || `pending-${ row.startDate }`
 const expandRows = computed(() => {
   let rows = tableData.value.filter(item => item.pending).map(getRecordKey)
   return rows
 })
+
+const setOutputContainer = (element, recordKey) => {
+  if (element) outputContainers.set(recordKey, element)
+  else outputContainers.delete(recordKey)
+}
+
+const handleOutputScroll = (event, recordKey) => {
+  const container = event.currentTarget
+  const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+  outputFollowState.set(recordKey, distanceToBottom <= OUTPUT_BOTTOM_THRESHOLD)
+}
+
+const scrollFollowingOutputs = (rows) => {
+  rows.forEach(row => {
+    const recordKey = getRecordKey(row)
+    if (outputFollowState.get(recordKey) === false) return
+    const container = outputContainers.get(recordKey)
+    if (container) container.scrollTop = container.scrollHeight
+  })
+}
 
 const rules = computed(() => {
   return {
@@ -273,65 +319,119 @@ watch(() => formData.hostIds, (val) => {
 
 const createExecShell = (hostIds = [], command = 'ls', timeout = 60) => {
   loading.value = true
-  timeRemaining.value = Number(formData.timeout)
+  executionState.value = 'running'
+  stoppingAll.value = false
+  stoppingHostIds.value = new Set()
+  timeRemaining.value = Number(timeout)
   let timer = null
-  socket.value = generateSocketInstance('/onekey')
-  socket.value.on('connect', () => {
+  let terminalEventReceived = false
+  const execSocket = generateSocketInstance('/onekey', { forceNew: true, reconnection: false })
+  socket.value = execSocket
+
+  execSocket.on('connect', () => {
     timer = setInterval(() => {
-      timeRemaining.value -= 1
+      timeRemaining.value = Math.max(0, timeRemaining.value - 1)
     }, 1000)
-    console.log('onekey socket已连接：', socket.value.id)
+    console.log('onekey socket已连接：', execSocket.id)
+    execSocket.emit('ws_onekey', { hostIds, token: token.value, command, timeout })
+  })
 
-    socket.value.on('ready', () => {
-      pendingRecord.value = [] // 每轮执行前清空
-    })
+  execSocket.on('ready', () => {
+    loading.value = false
+    outputFollowState.clear()
+    pendingRecord.value = [] // 每轮执行前清空
+  })
 
-    socket.value.emit('ws_onekey', { hostIds, token: token.value, command, timeout })
-
-    socket.value.on('output', (result) => {
-      loading.value = false
-      if (Array.isArray(result) && result.length > 0) {
-        // console.log('output', result)
-        result = result.map(item => ({ ...item, pending: true }))
-        pendingRecord.value = result
-        nextTick(() => {
-          document.querySelectorAll('.detail_content_box').forEach(container => {
-            container.scrollTop = container.scrollHeight
-          })
-        })
-      }
-    })
-
-    socket.value.on('exec_timeout', ({ reason }) => {
-      $notification({
-        title: '批量指令执行超时',
-        message: reason,
-        type: 'error'
+  execSocket.on('output', (result) => {
+    loading.value = false
+    if (Array.isArray(result) && result.length > 0) {
+      const nextPendingRecord = result.map(item => ({ ...item, pending: true }))
+      pendingRecord.value = nextPendingRecord
+      nextTick(() => {
+        scrollFollowingOutputs(nextPendingRecord)
       })
-      getOnekeyRecord()
-    })
+    }
+  })
 
-    socket.value.on('exec_complete', () => {
-      $notification({
-        title: '批量指令执行完成',
-        message: '执行完成',
-        type: 'success'
-      })
-      getOnekeyRecord()
+  execSocket.on('stop_result', async ({ ok, scope, hostId, persisted = true, message }) => {
+    if (scope === 'host') {
+      const nextStoppingIds = new Set(stoppingHostIds.value)
+      nextStoppingIds.delete(hostId)
+      stoppingHostIds.value = nextStoppingIds
+      if (ok) $message.success(message)
+      else $message.error(message)
+      return
+    }
+
+    terminalEventReceived = ok
+    stoppingAll.value = false
+    if (!ok) {
+      executionState.value = execSocket.connected ? 'running' : 'idle'
+      $message.error(message)
+      return
+    }
+
+    executionState.value = 'idle'
+    await getOnekeyRecord()
+    $notification({
+      title: '批量指令已停止',
+      message,
+      type: persisted ? 'warning' : 'error'
     })
   })
 
-  socket.value.on('disconnect', () => {
+  execSocket.on('create_fail', (message) => {
+    terminalEventReceived = true
+    executionState.value = 'idle'
     loading.value = false
+    $notification({
+      title: '批量指令创建失败',
+      message,
+      type: 'error'
+    })
+  })
+
+  execSocket.on('exec_timeout', ({ reason }) => {
+    terminalEventReceived = true
+    executionState.value = 'idle'
+    $notification({
+      title: '批量指令执行超时',
+      message: reason,
+      type: 'error'
+    })
+    getOnekeyRecord()
+  })
+
+  execSocket.on('exec_complete', () => {
+    terminalEventReceived = true
+    executionState.value = 'idle'
+    $notification({
+      title: '批量指令执行完成',
+      message: '执行完成',
+      type: 'success'
+    })
+    getOnekeyRecord()
+  })
+
+  execSocket.on('disconnect', () => {
+    const shouldRefresh = !terminalEventReceived && executionState.value !== 'idle'
+    loading.value = false
+    executionState.value = 'idle'
+    stoppingAll.value = false
+    stoppingHostIds.value = new Set()
     timeRemaining.value = 0
     if (isClient.value) $store.getHostCatalog() // 如果是客户端安装/卸载脚本，更新下host
     isClient.value = false
     clearInterval(timer)
+    if (shouldRefresh) setTimeout(() => getOnekeyRecord(), 250)
     console.warn('onekey websocket 连接断开')
   })
 
-  socket.value.on('connect_error', (err) => {
+  execSocket.on('connect_error', (err) => {
     loading.value = false
+    executionState.value = 'idle'
+    stoppingAll.value = false
+    clearInterval(timer)
     console.error('onekey websocket 连接错误：', err)
     $notification({
       title: 'onekey websocket 连接错误：',
@@ -339,6 +439,48 @@ const createExecShell = (hostIds = [], command = 'ls', timeout = 60) => {
       type: 'error'
     })
   })
+}
+
+const canStopHost = row => {
+  return row.pending && row.hostId && !stoppingAll.value && ['连接中', '执行中',].includes(row.status)
+}
+
+const isHostStopping = hostId => stoppingHostIds.value.has(hostId)
+
+const stopHost = row => {
+  if (!canStopHost(row) || isHostStopping(row.hostId)) return
+  if (!socket.value?.connected) return $message.error('onekey websocket 已断开')
+  stoppingHostIds.value = new Set([...stoppingHostIds.value, row.hostId,])
+  socket.value.emit('ws_onekey_stop', { scope: 'host', hostId: row.hostId })
+}
+
+const stopAll = async () => {
+  try {
+    await $messageBox.confirm(
+      '停止后，未完成的实例将标记为“执行中断”，是否继续？',
+      '停止批量指令',
+      {
+        confirmButtonText: '停止执行',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  if (!socket.value?.connected) {
+    socket.value?.disconnect()
+    executionState.value = 'idle'
+    loading.value = false
+    timeRemaining.value = 0
+    return $message.warning('批量任务尚未建立连接，已取消执行')
+  }
+
+  stoppingAll.value = true
+  executionState.value = 'stopping'
+  socket.value.emit('ws_onekey_stop', { scope: 'all' })
 }
 
 onMounted(async () => {
@@ -385,6 +527,7 @@ let getOnekeyRecord = async () => {
   let { data } = await $api.getOnekeyRecord()
   recordList.value = data
   pendingRecord.value = []
+  outputFollowState.clear()
   loading.value = false
 }
 

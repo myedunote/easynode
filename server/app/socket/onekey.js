@@ -4,215 +4,302 @@ import { sendNoticeAsync } from '../utils/notify.js'
 import { shellThrottle } from '../utils/tools.js'
 import { createSecureWs } from '../utils/ws-tool.js'
 import { HostListDB, OnekeyDB } from '../utils/db-class.js'
+import { OnekeyExecutionState, execStatusEnum } from '../services/onekey-execution.js'
 import { getConnectionOptions, handleProxyAndJumpHostConnection } from './terminal.js'
+
 const hostListDB = new HostListDB().getInstance()
 const onekeyDB = new OnekeyDB().getInstance()
 
-const execStatusEnum = {
-  connecting: '连接中',
-  connectFail: '连接失败',
-  executing: '执行中',
-  execSuccess: '执行成功',
-  execFail: '执行失败',
-  execTimeout: '执行超时',
-  socketInterrupt: '执行中断'
+let activeRun = null
+
+function emitOutput(run) {
+  if (run?.socket.connected) run.socket.emit('output', run.state.results)
 }
 
-let isExecuting = false
-let execResult = []
-let execClient = []
-let jumpSshClientsPool = []
+function requestBatchFinish(run, reason, status) {
+  if (run.finishReason) return false
+  const stoppedCount = run.state.finishPending(status)
+  if (!stoppedCount) return false
+  run.finishReason = reason
+  clearTimeout(run.timeoutTimer)
+  return true
+}
 
-function disconnectAllExecClient() {
-  execClient.forEach((sshClient) => {
-    if (sshClient) {
-      sshClient.end()
-      sshClient.destroy()
-      sshClient = null
+async function finalizeRun(run) {
+  if (run.finalizePromise) return run.finalizePromise
+  run.finalizePromise = (async () => {
+    clearTimeout(run.timeoutTimer)
+    let persisted = true
+    try {
+      await onekeyDB.insertAsync(run.state.results)
+    } catch (error) {
+      persisted = false
+      logger.error('onekey执行记录保存失败:', error.message)
+    } finally {
+      if (activeRun === run) activeRun = null
     }
-  })
-  jumpSshClientsPool.forEach(jumpSshClients => {
-    jumpSshClients?.forEach(sshClient => sshClient && sshClient.end())
-  })
-  jumpSshClientsPool = []
+    return persisted
+  })()
+  return run.finalizePromise
 }
 
-function execShell(socket, sshClient, curRes, resolve) {
-  const throttledDataHandler = shellThrottle(() => {
-    socket.emit('output', execResult)
-    // const memoryUsage = process.memoryUsage()
-    // const formattedMemoryUsage = {
-    //   rss: (memoryUsage.rss / 1024 / 1024).toFixed(2) + ' MB', // Resident Set Size: total memory allocated for the process execution
-    //   heapTotal: (memoryUsage.heapTotal / 1024 / 1024).toFixed(2) + ' MB', // Total size of the allocated heap
-    //   heapUsed: (memoryUsage.heapUsed / 1024 / 1024).toFixed(2) + ' MB', // Actual memory used during the execution
-    //   external: (memoryUsage.external / 1024 / 1024).toFixed(2) + ' MB', // Memory used by "external" components like V8 external memory
-    //   arrayBuffers: (memoryUsage.arrayBuffers / 1024 / 1024).toFixed(2) + ' MB' // Memory allocated for ArrayBuffer and SharedArrayBuffer, including all Node.js Buffers
-    // }
-    // console.log(formattedMemoryUsage)
-  }, 1000) // 防止内存爆破
-  sshClient.exec(curRes.command, function(err, stream) {
-    if (err) {
-      console.log(curRes.host, '命令执行失败:', err)
-      curRes.status = execStatusEnum.execFail
-      curRes.result += err.toString()
-      socket.emit('output', execResult)
+function execShell(run, sshClient, curRes) {
+  const { state } = run
+  const hostId = curRes.hostId
+  const throttledDataHandler = shellThrottle(() => emitOutput(run), 1000)
+
+  sshClient.exec(curRes.command, (error, stream) => {
+    if (!state.isActive(hostId)) {
+      if (stream) state.attachStream(hostId, stream)
       return
     }
+    if (error) {
+      logger.error(`onekey指令执行失败 ${ curRes.host }:`, error.message)
+      state.finishHost(hostId, execStatusEnum.execFail, error.toString())
+      return
+    }
+    if (!state.attachStream(hostId, stream)) return
+
     stream
-      .on('close', async () => {
-        // shell关闭后，再执行一次输出，防止最后一次节流函数发生在延迟时间内导致终端的输出数据丢失
-        await throttledDataHandler.last() // 等待最后一次节流函数执行完成，再执行一次数据输出
-        // console.log('onekey终端执行完成, 关闭连接: ', curRes.host)
-        if (curRes.status === execStatusEnum.executing) {
-          curRes.status = execStatusEnum.execSuccess
-        }
-        socket.emit('output', execResult)
-        resolve(curRes)
-        sshClient.end()
+      .once('close', () => {
+        // 输出已实时写入 result，收尾广播会带上最后一段内容。
+        state.finishHost(hostId, execStatusEnum.execSuccess)
+      })
+      .once('error', (streamError) => {
+        logger.error(`onekey指令流异常 ${ curRes.host }:`, streamError.message)
+        state.finishHost(hostId, execStatusEnum.execFail, streamError.message)
       })
       .on('data', (data) => {
-        // console.log(curRes.host, '执行中: \n' + data)
-        curRes.status = execStatusEnum.executing
-        curRes.result += data.toString()
-        // socket.emit('output', execResult)
+        if (!state.appendOutput(hostId, data)) return
         throttledDataHandler(data)
       })
-      .stderr
-      .on('data', (data) => {
-        // console.log(curRes.host, '命令执行过程中产生错误: ' + data)
-        curRes.status = execStatusEnum.executing
-        curRes.result += data.toString()
-        // socket.emit('output', execResult)
-        throttledDataHandler(data)
-      })
+
+    stream.stderr.on('data', (data) => {
+      if (!state.appendOutput(hostId, data)) return
+      throttledDataHandler(data)
+    })
   })
+}
+
+async function connectTarget(run, hostInfo) {
+  const { state } = run
+  const hostId = hostInfo._id
+  const curRes = state.getTarget(hostId).result
+
+  try {
+    const { authInfo: targetConnectionOptions } = await getConnectionOptions(hostId)
+    if (!state.isActive(hostId)) return
+
+    try {
+      const result = await handleProxyAndJumpHostConnection({
+        hostInfo,
+        targetConnectionOptions,
+        socket: null,
+        logPrefix: 'Onekey '
+      })
+      const transportAttached = state.attachTransport(hostId, result.targetConnectionOptions?.sock)
+      const jumpClientsAttached = state.attachJumpClients(hostId, result.jumpSshClients)
+      if (!transportAttached || !jumpClientsAttached) return
+    } catch (proxyError) {
+      if (state.isActive(hostId)) {
+        state.finishHost(hostId, execStatusEnum.connectFail, `代理连接失败: ${ proxyError.message }`)
+      }
+      return
+    }
+
+    if (!state.isActive(hostId)) return
+    logger.info('准备连接终端执行一次性指令：', curRes.host)
+    logger.info('连接信息', {
+      username: targetConnectionOptions.username,
+      port: targetConnectionOptions.port,
+      authType: hostInfo.authType
+    })
+
+    const sshClient = new SSHClient()
+    if (!state.attachSshClient(hostId, sshClient)) return
+    sshClient
+      .once('ready', () => {
+        if (!state.isActive(hostId)) return
+        logger.info('连接终端成功：', curRes.host)
+        execShell(run, sshClient, curRes)
+      })
+      .on('error', (error) => {
+        if (!state.isActive(hostId)) return
+        logger.error('onekey终端连接失败:', error.message)
+        const status = curRes.status === execStatusEnum.executing
+          ? execStatusEnum.execFail
+          : execStatusEnum.connectFail
+        state.finishHost(hostId, status, error.message)
+      })
+      .on('keyboard-interactive', (name, instructions, instructionsLang, prompts, finish) => {
+        finish([targetConnectionOptions[hostInfo.authType]])
+      })
+      .connect({
+        tryKeyboard: true,
+        ...targetConnectionOptions
+      })
+  } catch (error) {
+    if (!state.isActive(hostId)) return
+    logger.error('onekey创建终端错误:', error.message)
+    state.finishHost(hostId, execStatusEnum.connectFail, error.message)
+  }
+}
+
+async function executeRun(run, targetHostsInfo) {
+  run.timeoutTimer = setTimeout(() => {
+    if (!requestBatchFinish(run, 'timeout', execStatusEnum.execTimeout)) return
+    logger.error('onekey执行超时')
+  }, run.timeout * 1000)
+
+  targetHostsInfo.forEach(hostInfo => {
+    connectTarget(run, hostInfo)
+  })
+
+  await run.state.waitForAll()
+  if (!run.finishReason) run.finishReason = 'complete'
+  await finalizeRun(run)
+
+  if (!run.socket.connected) return
+  if (run.finishReason === 'complete') {
+    logger.info('onekey执行完成')
+    run.socket.emit('exec_complete')
+    sendNoticeAsync('onekey_complete', '批量指令执行完成', '请登录面板查看执行结果')
+  } else if (run.finishReason === 'timeout') {
+    const reason = `执行超时,已强制终止执行 - 超时时间${ run.timeout }秒`
+    sendNoticeAsync('onekey_complete', '批量指令执行超时', reason)
+    run.socket.emit('exec_timeout', { reason, result: run.state.results })
+  }
 }
 
 export default (httpServer) => {
   const serverIo = createSecureWs(httpServer, '/onekey')
 
-  serverIo.on('connection', async (socket) => {
+  serverIo.on('connection', (socket) => {
     logger.info('onekey-terminal websocket 已连接')
-    if (isExecuting) {
-      socket.emit('create_fail', '正在执行中, 请稍后再试')
-      socket.disconnect()
-      return
-    }
-    isExecuting = true
-    socket.on('ws_onekey', async ({ hostIds, command, timeout }) => {
-      console.log('onekey command:', command)
-      const hostList = await hostListDB.findAsync({})
+    let currentRun = null
+
+    socket.on('ws_onekey', async ({ hostIds = [], command = '', timeout = 120 } = {}) => {
+      if (activeRun) {
+        socket.emit('create_fail', '正在执行中, 请稍后再试')
+        if (activeRun.socket !== socket) socket.disconnect()
+        return
+      }
+
+      const uniqueHostIds = [...new Set(Array.isArray(hostIds) ? hostIds : [])]
+      let hostList
+      try {
+        hostList = await hostListDB.findAsync({})
+      } catch (error) {
+        logger.error('onekey读取服务器信息失败:', error.message)
+        socket.emit('create_fail', '读取服务器信息失败')
+        socket.disconnect()
+        return
+      }
+      // 数据库查询期间可能有另一个 Socket 抢先启动任务。
+      if (activeRun) {
+        socket.emit('create_fail', '正在执行中, 请稍后再试')
+        if (activeRun.socket !== socket) socket.disconnect()
+        return
+      }
       const hostById = new Map(hostList.map(item => [item._id, item]))
-      const targetHostsInfo = hostIds.map(id => hostById.get(id)).filter(Boolean)
-      if (!targetHostsInfo.length) return socket.emit('create_fail', `未找到【${ hostIds }】服务器信息`)
-      // 查找 hostInfo -> 并发执行
-      socket.emit('ready')
-      let execPromise = targetHostsInfo.map((hostInfo, index) => {
-        return new Promise(async (resolve, reject) => {
-          setTimeout(() => reject('执行超时'), timeout * 1000)
-          let { host, port } = hostInfo
-          let curRes = { command, host, port, name: hostInfo.name, result: '', status: execStatusEnum.connecting, startDate: Date.now() + index }
-          execResult.push(curRes)
-          let jumpSshClients = []
-          try {
-            let { authInfo: targetConnectionOptions } = await getConnectionOptions(hostInfo._id)
+      const targetHostsInfo = uniqueHostIds.map(id => hostById.get(id)).filter(Boolean)
+      if (!targetHostsInfo.length) {
+        socket.emit('create_fail', `未找到【${ uniqueHostIds }】服务器信息`)
+        socket.disconnect()
+        return
+      }
 
-            // 使用通用的代理和跳板机连接处理函数
-            try {
-              const result = await handleProxyAndJumpHostConnection({
-                hostInfo,
-                targetConnectionOptions,
-                socket: null, // Onekey不需要发送terminal_print_info事件
-                logPrefix: 'Onekey '
-              })
-              jumpSshClients = result.jumpSshClients
-              if (jumpSshClients.length > 0) {
-                jumpSshClientsPool.push(jumpSshClients)
-              }
-            } catch (proxyError) {
-              curRes.status = execStatusEnum.connectFail
-              curRes.result += `代理连接失败: ${ proxyError.message }`
-              socket.emit('output', execResult)
-              resolve(curRes)
-              return
-            }
-
-            logger.info('准备连接终端执行一次性指令：', host)
-            logger.info('连接信息', { username: targetConnectionOptions.username, port: targetConnectionOptions.port, authType: hostInfo.authType })
-
-            let sshClient = new SSHClient()
-            execClient.push(sshClient)
-            sshClient
-              .on('ready', () => {
-                logger.info('连接终端成功：', host)
-                execShell(socket, sshClient, curRes, resolve)
-              })
-              .on('error', (err) => {
-                console.log(err)
-                logger.error('onekey终端连接失败:', err.level)
-                curRes.status = execStatusEnum.connectFail
-                curRes.result += err.message
-                socket.emit('output', execResult)
-                // 清理跳板机连接
-                jumpSshClients?.forEach(sshClient => sshClient && sshClient.end())
-                resolve(curRes)
-              })
-              .on('keyboard-interactive', function (name, instructions, instructionsLang, prompts, finish) {
-                finish([targetConnectionOptions[hostInfo.authType]])
-              })
-              .connect({
-                tryKeyboard: true,
-                ...targetConnectionOptions
-              })
-          } catch (err) {
-            logger.error('创建终端错误:', err.message)
-            curRes.status = execStatusEnum.connectFail
-            curRes.result += err.message
-            socket.emit('output', execResult)
-            // 清理跳板机连接
-            jumpSshClients?.forEach(sshClient => sshClient && sshClient.end())
-            resolve(curRes)
-          }
+      const numericTimeout = Number(timeout)
+      let run = null
+      const state = new OnekeyExecutionState({
+        emitOutput: () => emitOutput(run)
+      })
+      const startDate = Date.now()
+      const batchId = `${ startDate }-${ socket.id }`
+      targetHostsInfo.forEach((hostInfo, index) => {
+        state.addTarget({
+          batchId,
+          batchStartDate: startDate,
+          order: index,
+          hostId: hostInfo._id,
+          command,
+          host: hostInfo.host,
+          port: hostInfo.port,
+          name: hostInfo.name,
+          result: '',
+          status: execStatusEnum.connecting,
+          startDate: startDate + index
         })
       })
+
+      run = {
+        socket,
+        state,
+        finishReason: null,
+        finalizePromise: null,
+        timeoutTimer: null,
+        timeout: Number.isFinite(numericTimeout) && numericTimeout >= 1 ? numericTimeout : 120
+      }
+      currentRun = run
+      activeRun = run
+      socket.emit('ready')
+      emitOutput(run)
+
       try {
-        await Promise.all(execPromise)
-        logger.info('onekey执行完成')
-        socket.emit('exec_complete')
-        sendNoticeAsync('onekey_complete', '批量指令执行完成', '请登录面板查看执行结果')
+        await executeRun(run, targetHostsInfo)
       } catch (error) {
-        logger.error('onekey执行超时:', error)
-        const { connecting, executing } = execStatusEnum
-        execResult.forEach(item => {
-          // 连接中和执行中的状态变更为超时状态
-          if ([connecting, executing].includes(item.status)) {
-            item.status = execStatusEnum.execTimeout
-          }
-        })
-        const reason = `执行超时,已强制终止执行 - 超时时间${ timeout }秒`
-        sendNoticeAsync('onekey_complete', '批量指令执行超时', reason)
-        socket.emit('exec_timeout', { reason, result: execResult })
+        logger.error('onekey执行失败:', error.message)
+        requestBatchFinish(run, 'disconnect', execStatusEnum.socketInterrupt)
+        await finalizeRun(run)
+        if (socket.connected) {
+          socket.emit('create_fail', error.message || '批量指令执行失败')
+        }
       } finally {
+        if (socket.connected && run.finishReason !== 'manual') socket.disconnect()
+      }
+    })
+
+    socket.on('ws_onekey_stop', async ({ scope, hostId } = {}) => {
+      const run = currentRun
+      if (!run || activeRun !== run) {
+        socket.emit('stop_result', { ok: false, scope, hostId, message: '当前没有可停止的批量任务' })
+        return
+      }
+
+      if (scope === 'host') {
+        const result = run.state.stopHost(hostId)
+        socket.emit('stop_result', { ...result, scope, hostId })
+        return
+      }
+
+      if (scope !== 'all') {
+        socket.emit('stop_result', { ok: false, scope, hostId, message: '不支持的停止范围' })
+        return
+      }
+
+      if (!requestBatchFinish(run, 'manual', execStatusEnum.socketInterrupt)) {
+        socket.emit('stop_result', { ok: false, scope, message: '当前批次已结束' })
+        return
+      }
+
+      const persisted = await finalizeRun(run)
+      if (socket.connected) {
+        socket.emit('stop_result', {
+          ok: true,
+          scope: 'all',
+          persisted,
+          message: persisted ? '已停止当前批次' : '已停止当前批次，但执行记录保存失败'
+        })
         socket.disconnect()
       }
     })
 
     socket.on('disconnect', async (reason) => {
       logger.info('onekey终端连接断开:', reason)
-      disconnectAllExecClient()
-      const { execSuccess, connectFail, execFail, execTimeout } = execStatusEnum
-      execResult.forEach(item => {
-        // 非服务端手动断开连接且命令执行状态为非完成\失败\超时, 判定为客户端主动中断
-        if (reason !== 'server namespace disconnect' && ![execSuccess, execFail, execTimeout, connectFail].includes(item.status)) {
-          item.status = execStatusEnum.socketInterrupt
-        }
-        item.endDate = Date.now()
-      })
-      await onekeyDB.insertAsync(execResult)
-      isExecuting = false
-      execResult = []
-      execClient = []
-      jumpSshClientsPool = []
+      const run = currentRun
+      if (!run || activeRun !== run) return
+      requestBatchFinish(run, 'disconnect', execStatusEnum.socketInterrupt)
+      await finalizeRun(run)
     })
   })
 }

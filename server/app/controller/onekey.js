@@ -1,4 +1,5 @@
 import { OnekeyDB } from '../utils/db-class.js'
+import { sortOnekeyRecords } from '../services/onekey-execution.js'
 const onekeyDB = new OnekeyDB().getInstance()
 
 async function getOnekeyRecord({ res }) {
@@ -6,7 +7,7 @@ async function getOnekeyRecord({ res }) {
   data = data.map(item => {
     return { ...item, id: item._id }
   })
-  data?.sort((a, b) => Number(b.startDate) - Number(a.startDate))
+  data = sortOnekeyRecords(data)
   res.success({ data })
 }
 
