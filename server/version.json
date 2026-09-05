@@ -2,7 +2,7 @@
   {
     "version": "v3.8.0",
     "date": "2026-09-05",
-    "nativeVersion": "native-v1.2.0",
+    "nativeVersion": "native-v1.3.0",
     "nativeReleaseUrl": "https://github.com/chaos-zhu/easynode/releases",
     "iosReleaseUrl": "",
     "ohosReleaseUrl": "",
@@ -19,12 +19,16 @@
       "其他功能优化、依赖升级与 bug 修复"
     ],
     "nativeFeatures": [
-      "移动端AI助手功能上线",
-      "ssh & sfpt状态共享优化",
-      "终端页拖动选择滚动优化",
-      "支持更多主题",
-      "proxyList 延迟加载修复",
-      "其他功能优化与bug修复"
+      "* AI Agent 新增外部 MCP 接入，支持远程 MCP Server、工具发现、启停与调用授权",
+      "* 新增自签证书信任功能，支持 SHA-256 指纹确认及证书变更安全提醒",
+      "* 新增 IP 访问控制管理，支持 IPv4、IPv6 及 CIDR 网段规则",
+      "* 优化登录会话管理，支持注销全部会话及登录记录自动清理",
+      "* 重构服务器、分组和脚本排序系统，支持拖动排序与多端顺序同步",
+      "* 优化服务器与脚本管理界面，新增滑动操作、详情展示及主机地址复制",
+      "* 优化 AI Agent 工具与授权卡片展示，改善长内容和溢出滚动体验",
+      "* 关闭 AI Agent 时不再校验未启用的模型配置",
+      "* 优化 iOS 构建兼容性、依赖与本地路径处理",
+      "* 其他交互优化与 bug 修复"
     ]
   },
   {
