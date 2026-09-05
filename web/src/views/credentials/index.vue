@@ -1,54 +1,80 @@
 <template>
-  <div class="credentials_container">
-    <div class="header">
-      <el-button type="primary" @click="addCredentials">添加凭证</el-button>
+  <div class="credentials_container data_page">
+    <div class="data_page_toolbar">
+      <span class="data_page_summary">共 <strong>{{ sshList.length }}</strong> 个凭据</span>
+      <div class="toolbar_actions">
+        <el-button type="primary" :icon="Plus" @click="addCredentials">添加凭据</el-button>
+      </div>
     </div>
-    <el-table v-loading="loading" :data="sshList">
-      <el-table-column prop="name" label="名称" />
-      <el-table-column prop="authType" label="类型">
-        <template #default="{ row }">
-          {{ row.authType === 'privateKey' ? '密钥' : '密码' }}
-        </template>
-      </el-table-column>
-      <el-table-column width="160px" label="操作">
-        <template #default="{ row }">
-          <el-button type="primary" @click="handleChange(row)">修改</el-button>
-          <el-button v-show="row.id !== 'default'" type="danger" @click="removeSSH(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="data_table_wrap">
+      <el-table v-loading="loading" :data="sshList" row-key="id" empty-text="暂无凭据">
+        <el-table-column prop="name" label="名称" min-width="220" />
+        <el-table-column prop="authType" label="类型" min-width="140">
+          <template #default="{ row }">
+            <el-tag effect="plain" :type="row.authType === 'privateKey' ? 'primary' : 'info'">
+              {{ row.authType === 'privateKey' ? '密钥' : '密码' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column width="108" label="操作" align="right" header-align="right">
+          <template #default="{ row }">
+            <div class="credential_actions">
+              <el-button text type="primary" @click="handleChange(row)">编辑</el-button>
+              <el-button
+                v-show="row.id !== 'default'"
+                text
+                type="danger"
+                @click="removeSSH(row)"
+              >
+                删除
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
     <el-dialog
       v-model="sshFormVisible"
-      width="600px"
-      top="150px"
-      :title="isModify ? '修改凭证' : '添加凭证'"
+      width="560px"
+      top="6vh"
+      class="management_dialog credential_form_dialog"
+      :title="isModify ? '编辑凭据' : '添加凭据'"
       :close-on-click-modal="false"
       @close="clearFormInfo"
     >
+      <template #header>
+        <div class="management_dialog_title">
+          <strong>{{ isModify ? '编辑凭据' : '添加凭据' }}</strong>
+        </div>
+      </template>
       <el-form
         ref="updateFormRef"
         :model="sshForm"
         :rules="rules"
         :hide-required-asterisk="true"
-        label-suffix="："
-        label-width="100px"
+        label-position="top"
         :show-message="false"
+        class="management_form"
       >
-        <el-form-item label="凭证名称" prop="name">
-          <el-input
-            v-model="sshForm.name"
-            clearable
-            placeholder=""
-            autocomplete="off"
-          />
-        </el-form-item>
-        <el-form-item label="认证方式" prop="type">
-          <el-radio v-model="sshForm.authType" value="privateKey">密钥</el-radio>
-          <el-radio v-model="sshForm.authType" value="password">密码</el-radio>
-        </el-form-item>
+        <div class="management_form_grid">
+          <el-form-item label="凭据名称" prop="name">
+            <el-input
+              v-model="sshForm.name"
+              clearable
+              placeholder="用于识别凭据"
+              autocomplete="off"
+            />
+          </el-form-item>
+          <el-form-item label="认证方式" prop="type">
+            <el-radio-group v-model="sshForm.authType" class="management_choice_group">
+              <el-radio value="privateKey">密钥</el-radio>
+              <el-radio value="password">密码</el-radio>
+            </el-radio-group>
+          </el-form-item>
+        </div>
         <el-form-item v-if="sshForm.authType === 'privateKey'" prop="privateKey" label="密钥">
-          <el-button type="primary" size="small" @click="handleClickUploadBtn">
-            本地私钥...
+          <el-button size="small" @click="handleClickUploadBtn">
+            选择本地私钥
           </el-button>
           <input
             ref="privateKeyRef"
@@ -80,10 +106,11 @@
         <el-form-item v-if="sshForm.authType === 'password'" prop="password" label="密码">
           <el-input
             v-model="sshForm.password"
-            type="text"
-            placeholder=""
+            type="password"
+            placeholder="输入密码"
             autocomplete="off"
             clearable
+            show-password
           />
           <div v-if="passwordHasSpace" class="password-warning">
             <el-icon><WarningFilled /></el-icon>
@@ -92,20 +119,26 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <span>
-          <el-button @click="sshFormVisible = false">关闭</el-button>
-          <el-button type="primary" @click="updateForm">{{ isModify ? '修改' : '添加' }}</el-button>
-        </span>
+        <div class="management_dialog_actions">
+          <el-button @click="sshFormVisible = false">取消</el-button>
+          <el-button type="primary" @click="updateForm">
+            {{ isModify ? '保存修改' : '创建凭据' }}
+          </el-button>
+        </div>
       </template>
     </el-dialog>
     <el-dialog
       v-model="keyPasswordVisible"
-      title="输入密钥密码"
       width="400px"
+      append-to-body
+      class="management_dialog key_password_dialog"
       :close-on-click-modal="false"
     >
-      <el-form @submit.prevent>
-        <el-form-item label="密码">
+      <template #header>
+        <div class="management_dialog_title"><strong>输入密钥密码</strong></div>
+      </template>
+      <el-form class="management_form management_form_single" @submit.prevent>
+        <el-form-item class="key_password_field">
           <el-input
             v-model="keyPassword"
             type="password"
@@ -118,10 +151,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <span>
+        <div class="management_dialog_actions">
           <el-button @click="keyPasswordVisible = false">取消</el-button>
-          <el-button type="primary" @click="handleDecryptKey">确认</el-button>
-        </span>
+          <el-button type="primary" @click="handleDecryptKey">解密密钥</el-button>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -130,7 +163,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, getCurrentInstance, watch } from 'vue'
 import { randomStr, AESEncrypt, RSAEncrypt } from '@utils/index.js'
-import { WarningFilled } from '@element-plus/icons-vue'
+import { Plus, WarningFilled } from '@element-plus/icons-vue'
 
 const { proxy: { $api, $message, $messageBox, $store } } = getCurrentInstance()
 
@@ -147,7 +180,7 @@ const sshForm = reactive({
 
 const rules = computed(() => {
   return {
-    name: { required: true, message: '需输入凭证名称', trigger: 'change' },
+    name: { required: true, message: '需输入凭据名称', trigger: 'change' },
     password: [{ required: !isModify.value && sshForm.authType === 'password', trigger: 'change' },],
     privateKey: [{ required: !isModify.value && sshForm.authType === 'privateKey', trigger: 'change' },]
   }
@@ -200,7 +233,7 @@ const clearFormInfo = () => {
 }
 
 const removeSSH = ({ id, name }) => {
-  $messageBox.confirm(`确认删除该凭证：${ name }`, 'Warning', {
+  $messageBox.confirm(`确认删除该凭据：${ name }`, 'Warning', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
@@ -208,7 +241,7 @@ const removeSSH = ({ id, name }) => {
     .then(async () => {
       await $api.removeSSH(id)
       await $store.getSSHList()
-      await $store.getHostList()
+      await $store.getHostCatalog()
       $message.success('success')
     })
 }
@@ -265,22 +298,28 @@ const handleDecryptKey = async () => {
 
 <style lang="scss" scoped>
 .credentials_container {
-  padding: 0 20px 20px 20px;
-  .header {
-    padding: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: end;
+  .data_table_wrap {
+    flex: 0 1 auto;
   }
 }
 
-.host_count {
-  display: block;
-  width: 100px;
-  text-align: center;
-  font-size: 15px;
-  color: #87cf63;
-  cursor: pointer;
+.credential_actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0;
+
+  :deep(.el-button) {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.key_password_field {
+  margin-bottom: 0;
 }
 
 .password-warning {
@@ -291,4 +330,5 @@ const handleDecryptKey = async () => {
   font-size: 13px;
   color: #CF8A20;
 }
+
 </style>

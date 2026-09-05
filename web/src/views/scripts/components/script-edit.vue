@@ -2,75 +2,71 @@
   <el-dialog
     v-model="visible"
     width="600px"
-    top="150px"
-    :title="isModify ? '修改脚本' : '添加脚本'"
+    top="5vh"
+    class="management_dialog script_form_dialog"
+    :title="isModify ? '编辑脚本' : '添加脚本'"
     :close-on-click-modal="false"
-    @open="handleOpen"
     @close="handleClose"
   >
+    <template #header>
+      <div class="management_dialog_title">{{ isModify ? '编辑脚本' : '添加脚本' }}</div>
+    </template>
     <el-form
       ref="formRef"
       :model="formData"
       :rules="rules"
       :hide-required-asterisk="true"
-      label-suffix="："
-      label-width="100px"
+      label-position="top"
       :show-message="false"
+      class="management_form"
     >
-      <el-form-item key="group" label="分组" prop="group">
-        <el-select
-          v-model="formData.group"
-          placeholder=""
-          clearable
-          style="width: 100%;"
-        >
-          <el-option
-            v-for="item in groupList"
-            :key="item.id"
-            :label="item.name"
-            :value="item.id"
-            :disabled="item.id === 'builtin'"
+      <div class="management_form_grid">
+        <el-form-item key="group" label="分组" prop="group">
+          <el-select
+            v-model="formData.group"
+            placeholder="选择分组"
+            style="width: 100%;"
+          >
+            <el-option
+              v-for="item in groupList"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+              :disabled="item.id === 'builtin'"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="名称" prop="name">
+          <el-input
+            v-model="formData.name"
+            clearable
+            placeholder="输入脚本名称"
+            autocomplete="off"
           />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="名称" prop="name">
-        <el-input
-          v-model="formData.name"
-          clearable
-          placeholder=""
-          autocomplete="off"
-        />
-      </el-form-item>
+        </el-form-item>
+      </div>
       <el-form-item label="描述" prop="description">
         <el-input
           v-model="formData.description"
           clearable
-          placeholder=""
+          placeholder="简要描述脚本用途（可选）"
           autocomplete="off"
         />
       </el-form-item>
-      <el-form-item label="序号" prop="index">
-        <el-input
-          v-model.trim.number="formData.index"
-          clearable
-          placeholder=""
-          autocomplete="off"
-        />
-      </el-form-item>
-      <el-form-item prop="command" label="内容">
+      <el-form-item prop="command" label="脚本内容">
         <el-input
           v-model="formData.command"
+          class="script_content_input"
           type="textarea"
-          :rows="5"
+          :rows="7"
           clearable
           autocomplete="off"
-          style="margin-top: 5px;"
-          placeholder="shell script"
+          placeholder="输入 Shell 脚本"
         />
       </el-form-item>
       <el-form-item label="编码方式" prop="useBase64">
-        <el-radio-group v-model="formData.useBase64">
-          <el-radio :value="false">
+        <el-radio-group v-model="formData.useBase64" class="management_choice_group">
+          <el-radio :value="false" border>
             <span>直接发送</span>
             <el-tooltip placement="right">
               <template #content>
@@ -83,8 +79,8 @@
               <el-icon style="margin-left: 4px; cursor: help;"><QuestionFilled /></el-icon>
             </el-tooltip>
           </el-radio>
-          <el-radio :value="true">
-            <span>Base64编码</span>
+          <el-radio :value="true" border>
+            <span>Base64 编码</span>
             <el-tooltip placement="right">
               <template #content>
                 <div style="max-width: 300px;">
@@ -103,10 +99,10 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <span>
-        <el-button @click="visible = false">关闭</el-button>
-        <el-button type="primary" @click="handleSubmit">{{ isModify ? '修改' : '添加' }}</el-button>
-      </span>
+      <el-button @click="visible = false">取消</el-button>
+      <el-button type="primary" @click="handleSubmit">
+        {{ isModify ? '保存修改' : '创建脚本' }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -147,15 +143,10 @@ const visible = computed({
 const formRef = ref(null)
 
 const groupList = computed(() => $store.scriptGroupList || [])
-const scriptList = computed(() => $store.scriptList)
-const curGroupScripts = computed(() => scriptList.value.filter(item => item.group === props.defaultGroup))
-const nextIndex = computed(() => curGroupScripts.value.reduce((acc, cur) => Math.max(acc, Number(cur.index) || 0), 0) + 1)
-
 const formData = reactive({
   group: '',
   name: '',
   description: '',
-  index: nextIndex.value || 0,
   command: '',
   useBase64: false
 })
@@ -165,7 +156,6 @@ const rules = {
   group: { required: true, message: '选择一个分组' },
   name: { required: true, trigger: 'change' },
   description: { required: false, trigger: 'change' },
-  index: { required: false, type: 'number', trigger: 'change' },
   command: { required: true, trigger: 'change' }
 }
 
@@ -198,16 +188,9 @@ const handleClose = () => {
     group: props.defaultGroup,
     name: '',
     description: '',
-    index: nextIndex.value,
     command: props.defaultScript || '',
     useBase64: false
   })
-}
-
-const handleOpen = () => {
-  if (!formData.id) {
-    formData.index = nextIndex.value
-  }
 }
 
 const handleSubmit = () => {
@@ -220,9 +203,17 @@ const handleSubmit = () => {
         await $api.addScript(data)
       }
       visible.value = false
-      await $store.getScriptList()
+      await $store.getScriptCatalog()
       emit('success')
       $message.success('success')
     })
 }
 </script>
+
+<style lang="scss" scoped>
+.script_content_input {
+  :deep(.el-textarea__inner) {
+    font-family: var(--el-font-family-monospace, monospace);
+  }
+}
+</style>

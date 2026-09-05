@@ -11,7 +11,7 @@ const testCases = [
   {
     name: '1. 无Token访问受保护接口',
     request: {
-      url: `${ BASE_URL }/host-list`,
+      url: `${ BASE_URL }/host-catalog`,
       headers: {
         Cookie: `session=${ VALID_SESSION }`
       }
@@ -21,7 +21,7 @@ const testCases = [
   {
     name: '2. 无Session访问受保护接口',
     request: {
-      url: `${ BASE_URL }/host-list`,
+      url: `${ BASE_URL }/host-catalog`,
       headers: {
         token: VALID_TOKEN
       }
@@ -31,7 +31,7 @@ const testCases = [
   {
     name: '3. 伪造Token访问',
     request: {
-      url: `${ BASE_URL }/host-list`,
+      url: `${ BASE_URL }/host-catalog`,
       headers: {
         token: 'fake-invalid-token-12345',
         Cookie: `session=${ VALID_SESSION }`
@@ -49,7 +49,7 @@ const testCases = [
   {
     name: '5. 正常访问受保护接口',
     request: {
-      url: `${ BASE_URL }/host-list`,
+      url: `${ BASE_URL }/host-catalog`,
       headers: {
         token: VALID_TOKEN,
         Cookie: `session=${ VALID_SESSION }`
@@ -58,20 +58,9 @@ const testCases = [
     expected: { status: 200, success: true }
   },
   {
-    name: '6. 访问其他受保护接口 - 获取分组',
+    name: '6. 访问其他受保护接口 - 获取脚本与分组目录',
     request: {
-      url: `${ BASE_URL }/group`,
-      headers: {
-        token: VALID_TOKEN,
-        Cookie: `session=${ VALID_SESSION }`
-      }
-    },
-    expected: { status: 200, success: true }
-  },
-  {
-    name: '7. 访问其他受保护接口 - 获取脚本列表',
-    request: {
-      url: `${ BASE_URL }/script`,
+      url: `${ BASE_URL }/script-catalog`,
       headers: {
         token: VALID_TOKEN,
         Cookie: `session=${ VALID_SESSION }`

@@ -1,8 +1,9 @@
 <template>
   <el-dialog
     v-model="visible"
-    width="600px"
-    top="65px"
+    width="680px"
+    top="3vh"
+    class="management_dialog host_form_dialog"
     :append-to-body="false"
     :title="title"
     :close-on-click-modal="false"
@@ -10,6 +11,11 @@
     @open="handleOpen"
     @closed="handleClosed"
   >
+    <template #header>
+      <div class="management_dialog_title">
+        <strong>{{ title }}</strong>
+      </div>
+    </template>
     <div v-if="isBatchModify" class="batch_info">
       <el-alert title="正在进行批量修改操作,留空默认保留原值" type="warning" :closable="false" />
       <el-tag
@@ -26,68 +32,52 @@
       :model="hostForm"
       :rules="rules"
       :hide-required-asterisk="true"
-      label-suffix="："
-      label-width="100px"
+      label-position="top"
       :show-message="false"
+      class="host_form management_form"
     >
       <el-form-item key="connectType" label="连接类型" prop="connectType">
-        <el-radio-group v-model="hostForm.connectType">
+        <el-radio-group v-model="hostForm.connectType" class="management_choice_group">
           <el-radio value="ssh">SSH <svg-icon name="icon-linux" class="icon" /></el-radio>
           <PlusSupportTip>
             <el-radio value="rdp" :disabled="!isPlusActive">RDP <svg-icon name="icon-Windows" class="icon" /></el-radio>
           </PlusSupportTip>
         </el-radio-group>
       </el-form-item>
-      <el-form-item key="group" label="分组" prop="group">
-        <el-select
-          v-model="hostForm.group"
-          placeholder=""
-          clearable
-          style="width: 100%;"
-        >
-          <el-option
-            v-for="item in groupList"
-            :key="item.id"
-            :label="item.name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <div key="instance_info" class="instance_info">
+      <div class="management_form_grid">
+        <el-form-item key="group" label="分组" prop="group">
+          <el-select
+            v-model="hostForm.group"
+            placeholder="选择分组"
+            clearable
+            style="width: 100%;"
+          >
+            <el-option
+              v-for="item in groupList"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item
           v-if="!isBatchModify"
           key="name"
-          class="form_item_left"
           label="名称"
           prop="name"
         >
           <el-input
             v-model="hostForm.name"
             clearable
-            placeholder=""
-            autocomplete="off"
-          />
-        </el-form-item>
-        <el-form-item
-          v-if="!isBatchModify"
-          key="index"
-          class="form_item_right"
-          label="序号"
-          prop="index"
-        >
-          <el-input
-            v-model.trim.number="hostForm.index"
-            clearable
-            placeholder="用于实例列表中排序(填写数字)"
+            placeholder="用于识别实例"
             autocomplete="off"
           />
         </el-form-item>
       </div>
-      <div key="instance_info" class="instance_info">
+      <div key="instance_info" class="management_form_grid">
         <el-form-item
           v-if="!isBatchModify"
           key="host"
-          class="form_item_left"
           label="主机"
           prop="host"
         >
@@ -100,7 +90,6 @@
         </el-form-item>
         <el-form-item
           key="port"
-          class="form_item_right"
           label="端口"
           prop="port"
         >
@@ -112,28 +101,47 @@
           />
         </el-form-item>
       </div>
-      <el-form-item key="username" label="用户名" prop="username">
-        <el-autocomplete
-          v-model.trim="hostForm.username"
-          :fetch-suggestions="userSearch"
-          style="width: 100%;"
-          clearable
+      <div class="management_form_grid">
+        <el-form-item key="username" label="用户名" prop="username">
+          <el-autocomplete
+            v-model.trim="hostForm.username"
+            :fetch-suggestions="userSearch"
+            style="width: 100%;"
+            clearable
+          >
+            <template #default="{ item }">
+              <div class="value">{{ item.value }}</div>
+            </template>
+          </el-autocomplete>
+        </el-form-item>
+        <el-form-item
+          v-if="isSSH"
+          key="authType"
+          label="认证方式"
+          prop="authType"
         >
-          <template #default="{ item }">
-            <div class="value">{{ item.value }}</div>
-          </template>
-        </el-autocomplete>
-      </el-form-item>
-      <el-form-item
-        v-if="isSSH"
-        key="authType"
-        label="认证方式"
-        prop="authType"
-      >
-        <el-radio v-model="hostForm.authType" value="password">密码</el-radio>
-        <el-radio v-model="hostForm.authType" value="privateKey">密钥</el-radio>
-        <el-radio v-model="hostForm.authType" value="credential">凭据</el-radio>
-      </el-form-item>
+          <el-radio-group v-model="hostForm.authType" class="management_choice_group">
+            <el-radio value="password">密码</el-radio>
+            <el-radio value="privateKey">密钥</el-radio>
+            <el-radio value="credential">凭据</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item
+          v-else
+          key="password"
+          prop="password"
+          label="密码"
+        >
+          <el-input
+            v-model.trim="hostForm.password"
+            type="password"
+            placeholder=""
+            autocomplete="new-password"
+            clearable
+            show-password
+          />
+        </el-form-item>
+      </div>
       <el-form-item
         v-if="isSSH && hostForm.authType === 'privateKey'"
         key="privateKey"
@@ -168,7 +176,7 @@
         </div>
       </el-form-item>
       <el-form-item
-        v-if="hostForm.authType === 'password' || isRDP"
+        v-if="isSSH && hostForm.authType === 'password'"
         key="password"
         prop="password"
         label="密码"
@@ -212,7 +220,7 @@
           </el-option>
         </el-select>
       </el-form-item>
-      <el-collapse v-model="advancedSettingsCollapsed" accordion>
+      <el-collapse v-model="advancedSettingsCollapsed" accordion class="advanced_settings">
         <el-collapse-item name="advanced" title="其他设置">
           <PlusSupportTip>
             <el-form-item
@@ -221,7 +229,11 @@
               label="代理类型"
               prop="proxyType"
             >
-              <el-radio-group v-model="hostForm.proxyType" :disabled="!isPlusActive">
+              <el-radio-group
+                v-model="hostForm.proxyType"
+                class="management_choice_group"
+                :disabled="!isPlusActive"
+              >
                 <el-radio value="">不使用代理</el-radio>
                 <el-radio value="proxyServer">代理服务</el-radio>
                 <el-radio value="jumpHosts">跳板机</el-radio>
@@ -236,13 +248,13 @@
           >
             <el-select
               v-model="hostForm.jumpHosts"
-              placeholder="支持多选,跳板机连接顺序从前到后"
+              placeholder="选择跳板机，可多选"
               multiple
               :disabled="!isPlusActive"
             >
               <template #empty>
                 <div class="empty_text">
-                  <span>无可用跳板机器</span>
+                  <span>无可用跳板机</span>
                 </div>
               </template>
               <el-option
@@ -265,7 +277,7 @@
           >
             <el-select
               v-model="hostForm.proxyServer"
-              placeholder=""
+              placeholder="选择代理服务"
               :disabled="!isPlusActive"
             >
               <template #empty>
@@ -353,11 +365,15 @@
       </el-form-item> -->
     </el-form>
     <template #footer>
-      <span class="dialog-footer">
-        <el-button @click="visible = false">关闭</el-button>
-        <el-button v-if="!isBatchModify" type="primary" @click="handleSave">确认</el-button>
+      <span class="management_dialog_actions">
+        <el-button @click="visible = false">取消</el-button>
+        <el-button v-if="!isBatchModify" type="primary" @click="handleSave">
+          {{ submitText }}
+        </el-button>
         <PlusSupportTip v-else>
-          <el-button type="primary" :disabled="!isPlusActive" @click="handleSave">确认</el-button>
+          <el-button type="primary" :disabled="!isPlusActive" @click="handleSave">
+            {{ submitText }}
+          </el-button>
         </PlusSupportTip>
       </span>
     </template>
@@ -407,7 +423,6 @@ const formField = {
   password: '',
   privateKey: '',
   credential: '', // credentials -> _id
-  index: 0,
   expired: null,
   expiredNotify: false,
   consoleUrl: '',
@@ -455,7 +470,6 @@ const rules = computed(() => {
       message: '选择一个代理服务',
       trigger: 'change'
     },
-    index: { required: !isBatchModify.value, type: 'number', message: '输入数字', trigger: 'change' },
     // password: [{ required: hostForm.authType === 'password', trigger: 'change' },],
     // privateKey: [{ required: hostForm.authType === 'privateKey', trigger: 'change' },],
     expired: { required: false },
@@ -473,6 +487,11 @@ const visible = computed({
 
 const title = computed(() => {
   return isBatchModify.value ? '批量修改实例' : (defaultData.value ? '修改实例' : '添加实例')
+})
+
+const submitText = computed(() => {
+  if (isBatchModify.value) return '应用修改'
+  return defaultData.value ? '保存修改' : '创建实例'
 })
 
 // 连接类型计算属性
@@ -515,12 +534,9 @@ watch(advancedSettingsCollapsed, (newVal) => {
 
 const setDefaultData = () => {
   if (!defaultData.value) {
-    // 添加新实例时，设置index为当前最大index + 1
-    const maxIndex = Math.max(...hostList.value.map(host => host.index || 0), 0)
-    hostForm.value.index = maxIndex + 1
     return
   }
-  // eslint-disable-next-line no-unused-vars
+
   let { id, ...rest } = defaultData.value
   for (let [key,] of Object.entries(hostForm.value)) {
     if (rest[key] !== undefined) hostForm.value[key] = rest[key]
@@ -653,26 +669,37 @@ const handleSave = () => {
 
 <style lang="scss" scoped>
 .batch_info {
+  margin-bottom: 14px;
+
   :deep(.el-alert) {
-    padding-top: 2px;
-    padding-bottom: 2px;
-    margin-bottom: 5px;
+    margin-bottom: 10px;
+    border-radius: 8px;
   }
   :deep(.el-tag) {
     margin-right: 10px;
     margin-bottom: 6px;
   }
 }
-.instance_info {
-  display: flex;
-  justify-content: space-between;
+.advanced_settings {
+  margin-top: 2px;
+  padding: 0 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-fill-color-extra-light);
 
-  .form_item_left {
-    width: 60%;
+  :deep(.el-collapse-item__header) {
+    height: 42px;
+    font-weight: 600;
+    background: transparent;
   }
 
-  .form_item_right {
-    flex: 1;
+  :deep(.el-collapse-item__wrap) {
+    background: transparent;
+  }
+
+  :deep(.el-collapse-item__content) {
+    padding: 12px 0 0;
+    border-top: 1px solid var(--el-border-color-lighter);
   }
 }
 
@@ -692,11 +719,6 @@ const handleSave = () => {
   }
 }
 
-.dialog-footer {
-  display: flex;
-  justify-content: center;
-}
-
 .key_warning {
   display: flex;
   align-items: center;
@@ -704,5 +726,13 @@ const handleSave = () => {
   margin-top: 5px;
   font-size: 13px;
   color: #CF8A20;
+}
+
+@media (max-width: 680px) {
+  .advanced_settings {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
 }
 </style>

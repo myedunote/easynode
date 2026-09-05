@@ -1,8 +1,7 @@
 /// Mobile-side projection of `/api/v1/script` items.
 ///
 /// Mirrors the schema served by `server/app/controller/scripts.js`. The web
-/// shows a few special rows from `local-script` (the built-in shell library)
-/// that arrive with `index: '--'` and `group: 'builtin'`; we expose
+/// includes read-only built-in shell-library rows; we expose
 /// [isBuiltin] for the UI to disable editing on those rows.
 class ScriptModel {
   const ScriptModel({
@@ -10,7 +9,6 @@ class ScriptModel {
     required this.name,
     required this.description,
     required this.command,
-    required this.index,
     required this.group,
     required this.useBase64,
   });
@@ -20,9 +18,6 @@ class ScriptModel {
   final String description;
   final String command;
 
-  /// Display order within a group. Built-in scripts carry `'--'` from the
-  /// server and surface here as `null` so the UI can render a dash.
-  final int? index;
   final String group;
   final bool useBase64;
 
@@ -33,7 +28,6 @@ class ScriptModel {
     String? name,
     String? description,
     String? command,
-    int? index,
     String? group,
     bool? useBase64,
   }) {
@@ -42,7 +36,6 @@ class ScriptModel {
       name: name ?? this.name,
       description: description ?? this.description,
       command: command ?? this.command,
-      index: index ?? this.index,
       group: group ?? this.group,
       useBase64: useBase64 ?? this.useBase64,
     );
@@ -54,20 +47,8 @@ class ScriptModel {
       name: (json['name'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
       command: (json['command'] ?? '').toString(),
-      index: _parseIndex(json['index']),
       group: (json['group'] ?? 'default').toString(),
       useBase64: json['useBase64'] == true,
     );
-  }
-
-  static int? _parseIndex(Object? raw) {
-    if (raw is int) return raw;
-    if (raw is num) return raw.toInt();
-    if (raw is String) {
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty || trimmed == '--' || trimmed == '-') return null;
-      return int.tryParse(trimmed);
-    }
-    return null;
   }
 }

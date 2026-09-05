@@ -253,7 +253,7 @@ const handleDelete = async (row) => {
     await $api.removeProxy(row.id)
     $message.success('删除成功')
     await $store.getProxyList()
-    await $store.getHostList() // 后台会移除所有使用该代理的实例的proxyServer字段
+    await $store.getHostCatalog() // 后台会移除所有使用该代理的实例的proxyServer字段
   } catch (error) {
     // 如果是用户取消操作，不显示错误
     if (error === 'cancel') {

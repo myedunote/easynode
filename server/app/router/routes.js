@@ -1,11 +1,12 @@
 import { getSSHList, addSSH, updateSSH, removeSSH, getCommand, decryptPrivateKey, getRdpToken } from '../controller/ssh.js'
 import { getSftpFavorites } from '../controller/sftp.js'
-import { getHostList, addHost, updateHost, batchUpdateHost, removeHost, importHost, updateLastConnectTime } from '../controller/host.js'
+import { addHost, updateHost, batchUpdateHost, removeHost, importHost, updateLastConnectTime } from '../controller/host.js'
 import { login, getpublicKey, updatePwd, getEasynodeVersion, getMFA2Status, getMFA2Code, enableMFA2, disableMFA2, getPlusInfo, getPlusDiscount, getPlusConf, updatePlusKey, getPlusDevices, releasePlusDevice } from '../controller/user.js'
 import { getNotifyConfig, updateNotifyConfig, getNotifyList, updateNotifyList } from '../controller/notify.js'
-import { getGroupList, addGroupList, updateGroupList, removeGroup } from '../controller/group.js'
-import { getScriptList, getLocalScriptList, addScript, updateScriptList, removeScript, batchRemoveScript, importScript } from '../controller/scripts.js'
-import { getScriptGroupList, addScriptGroup, removeScriptGroup, updateScriptGroup } from '../controller/script-group.js'
+import { addGroupList, updateGroupList, removeGroup } from '../controller/group.js'
+import { getLocalScriptList, addScript, updateScriptList, removeScript, batchRemoveScript, importScript } from '../controller/scripts.js'
+import { addScriptGroup, removeScriptGroup, updateScriptGroup } from '../controller/script-group.js'
+import { getHostCatalog, getScriptCatalog, putHostOrder, putScriptOrder } from '../controller/catalog.js'
 import { getOnekeyRecord, removeOnekeyRecord } from '../controller/onekey.js'
 import { getLog, revokeAllLoginSessions, revokeLoginSid } from '../controller/sessionLog.js'
 import { getIpAccessRules, rejectLegacyIpAccessApi, saveIpAccessRules } from '../controller/ipAccess.js'
@@ -58,8 +59,13 @@ const ssh = [
 const host = [
   {
     method: 'get',
-    path: '/host-list',
-    controller: getHostList
+    path: '/host-catalog',
+    controller: getHostCatalog
+  },
+  {
+    method: 'put',
+    path: '/host-order',
+    controller: putHostOrder
   },
   {
     method: 'post',
@@ -189,11 +195,6 @@ const notify = [
 
 const group = [
   {
-    method: 'get',
-    path: '/group',
-    controller: getGroupList
-  },
-  {
     method: 'post',
     path: '/group',
     controller: addGroupList
@@ -213,8 +214,13 @@ const group = [
 const scripts = [
   {
     method: 'get',
-    path: '/script',
-    controller: getScriptList
+    path: '/script-catalog',
+    controller: getScriptCatalog
+  },
+  {
+    method: 'put',
+    path: '/script-order',
+    controller: putScriptOrder
   },
   {
     method: 'get',
@@ -249,11 +255,6 @@ const scripts = [
 ]
 
 const scriptGroup = [
-  {
-    method: 'get',
-    path: '/script-group',
-    controller: getScriptGroupList
-  },
   {
     method: 'post',
     path: '/script-group',

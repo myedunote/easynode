@@ -4,7 +4,7 @@ import 'package:easynode_native/core/api/api_result.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 DioException _httpFailure(int statusCode, Object body) {
-  final requestOptions = RequestOptions(path: '/host-list');
+  final requestOptions = RequestOptions(path: '/host-catalog');
   return DioException(
     requestOptions: requestOptions,
     response: Response(

@@ -29,7 +29,6 @@ class ServerFormPage extends ConsumerStatefulWidget {
 class _ServerFormPageState extends ConsumerState<ServerFormPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _indexCtrl = TextEditingController();
   final _hostCtrl = TextEditingController();
   final _portCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
@@ -46,14 +45,8 @@ class _ServerFormPageState extends ConsumerState<ServerFormPage> {
   @override
   void initState() {
     super.initState();
-    final hosts =
-        ref.read(hostListProvider).valueOrNull ?? const <ServerModel>[];
-    final maxIndex = hosts.fold<int>(
-      0,
-      (max, host) => host.index > max ? host.index : max,
-    );
     _form = widget.server == null
-        ? ServerFormData.add(nextIndex: maxIndex + 1)
+        ? ServerFormData.add()
         : ServerFormData.edit(widget.server!);
     _syncControllers();
   }
@@ -61,7 +54,6 @@ class _ServerFormPageState extends ConsumerState<ServerFormPage> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _indexCtrl.dispose();
     _hostCtrl.dispose();
     _portCtrl.dispose();
     _usernameCtrl.dispose();
@@ -75,7 +67,6 @@ class _ServerFormPageState extends ConsumerState<ServerFormPage> {
 
   void _syncControllers() {
     _nameCtrl.text = _form.name;
-    _indexCtrl.text = _form.index.toString();
     _hostCtrl.text = _form.host;
     _portCtrl.text = _form.port.toString();
     _usernameCtrl.text = _form.username;
@@ -140,31 +131,11 @@ class _ServerFormPageState extends ConsumerState<ServerFormPage> {
                       ? l.tr('servers.validation.group')
                       : null,
                 ),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _TextField(
-                        controller: _nameCtrl,
-                        label: l.tr('servers.field.name'),
-                        validator: (value) =>
-                            _required(value, l.tr('servers.validation.name')),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 110,
-                      child: _TextField(
-                        controller: _indexCtrl,
-                        label: l.tr('servers.field.index'),
-                        keyboardType: TextInputType.number,
-                        validator: (value) => _requiredInt(
-                          value,
-                          l.tr('servers.validation.index'),
-                        ),
-                      ),
-                    ),
-                  ],
+                _TextField(
+                  controller: _nameCtrl,
+                  label: l.tr('servers.field.name'),
+                  validator: (value) =>
+                      _required(value, l.tr('servers.validation.name')),
                 ),
               ],
             ),
@@ -442,7 +413,6 @@ class _ServerFormPageState extends ConsumerState<ServerFormPage> {
       ..host = _hostCtrl.text
       ..port = int.parse(_portCtrl.text.trim())
       ..username = _usernameCtrl.text
-      ..index = int.parse(_indexCtrl.text.trim())
       ..password = _passwordCtrl.text
       ..privateKey = _privateKeyCtrl.text
       ..consoleUrl = _consoleUrlCtrl.text

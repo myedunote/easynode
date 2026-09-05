@@ -135,7 +135,6 @@
               <el-button type="primary" :loading="savingProvider" @click="saveProvider">保存 Provider 设置</el-button>
             </el-form-item>
           </el-form>
-
         </section>
       </el-tab-pane>
 
@@ -210,7 +209,6 @@
           </el-table>
         </section>
       </el-tab-pane>
-
     </el-tabs>
   </div>
 </template>
@@ -247,7 +245,7 @@ const DEFAULT_HOST_POLICY = {
 
 const DEFAULT_CONTEXT_LIMIT = 64 * 1024
 const DEFAULT_MAX_STEPS = 25
-const SETTING_SECTIONS = new Set(['provider', 'mcp', 'hosts'])
+const SETTING_SECTIONS = new Set(['provider', 'mcp', 'hosts',])
 const savedSection = localStorage.getItem('aiAgentSettingsSection')
 
 const activeSection = ref(SETTING_SECTIONS.has(savedSection) ? savedSection : 'provider')
@@ -391,7 +389,7 @@ async function saveHostPolicy(row) {
   savingHostId.value = row.id
   try {
     await $api.updateHost({ id: row.id, aiPolicy: { ...row.aiPolicy } })
-    await $store.getHostList()
+    await $store.getHostCatalog()
     $message.success(`已保存 ${ row.name } 的 AI 策略`)
   } catch (error) {
     $message.error(error.message || '保存主机 AI 策略失败')
@@ -409,12 +407,12 @@ watch(() => $store.aiConfig, syncProviderForm, { immediate: true, deep: true })
 watch(() => $store.hostList, syncHostPolicies, { immediate: true, deep: true })
 watch(activeSection, async (section) => {
   localStorage.setItem('aiAgentSettingsSection', section)
-  if (section === 'hosts' && !$store.hostList.length) await $store.getHostList()
+  if (section === 'hosts' && !$store.hostList.length) await $store.getHostCatalog()
 })
 
 onMounted(async () => {
   await $store.getAIConfig()
-  if (activeSection.value === 'hosts' && !$store.hostList.length) await $store.getHostList()
+  if (activeSection.value === 'hosts' && !$store.hostList.length) await $store.getHostCatalog()
 })
 </script>
 

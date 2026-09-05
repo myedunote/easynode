@@ -1,0 +1,252 @@
+// 管理型弹窗统一外观：实例表单、分组管理与列表设置共用。
+.management_dialog {
+  --management-dialog-padding-x: 18px;
+  max-width: calc(100vw - 24px);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+
+  .el-dialog__header {
+    min-height: 46px;
+    margin-right: 0;
+    padding: 12px var(--management-dialog-padding-x);
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+
+  .el-dialog__headerbtn {
+    top: 6px;
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+
+    &:hover {
+      background: var(--el-fill-color-light);
+    }
+  }
+
+  .el-dialog__body {
+    padding: 14px var(--management-dialog-padding-x);
+  }
+
+  .el-dialog__footer {
+    padding: 10px var(--management-dialog-padding-x);
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  .el-dialog__footer .el-button {
+    min-width: 76px;
+    height: 36px;
+    border-radius: 8px;
+  }
+}
+
+.management_form {
+  .el-form-item {
+    margin-bottom: 12px;
+  }
+
+  > .el-form-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .el-form-item__label {
+    height: auto;
+    margin-bottom: 6px;
+    padding: 0;
+    color: var(--el-text-color-regular);
+    font-weight: 500;
+    line-height: 20px;
+  }
+
+  .el-input__wrapper,
+  .el-select__wrapper {
+    min-height: 36px;
+  }
+
+  .el-select,
+  .el-autocomplete {
+    width: 100%;
+  }
+
+  .el-textarea__inner {
+    padding: 10px 12px;
+    line-height: 1.55;
+  }
+}
+
+.management_form_single .el-form-item {
+  margin-bottom: 0;
+}
+
+.management_form_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 14px;
+}
+
+.management_choice_group {
+  max-width: 100%;
+  width: fit-content;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+
+  .el-radio,
+  .el-radio.is-bordered {
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+    color: var(--el-text-color-regular);
+    border: 0;
+    background: transparent;
+    transition: color .18s ease;
+  }
+
+  .el-radio__inner {
+    width: 16px;
+    height: 16px;
+    border-color: var(--el-border-color);
+    transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+  }
+
+  .el-radio__label {
+    padding-left: 7px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+  }
+
+  .el-radio:not(.is-disabled):hover,
+  .el-radio.is-checked {
+    color: var(--el-color-primary);
+  }
+
+  .el-radio:not(.is-disabled):hover .el-radio__inner {
+    border-color: var(--el-color-primary);
+  }
+
+  .el-radio__input.is-checked .el-radio__inner {
+    border-color: var(--el-color-primary);
+    background: var(--el-color-primary);
+    box-shadow: 0 0 0 3px var(--el-color-primary-light-9);
+  }
+}
+
+.management_dialog_actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+
+  .el-button + .el-button {
+    margin-left: 0;
+  }
+}
+
+.management_toolbar {
+  min-height: 48px;
+  padding: 0 12px 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 9px;
+  background: var(--el-fill-color-extra-light);
+
+  &.is-ordering {
+    border-color: color-mix(in srgb, var(--el-color-primary) 30%, var(--el-border-color));
+    background: color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color));
+  }
+}
+
+.management_toolbar_summary {
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+
+.management_toolbar_actions,
+.management_toolbar_hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.management_toolbar_actions .el-button {
+  margin: 0;
+}
+
+.management_toolbar_hint {
+  color: var(--el-text-color-regular);
+  font-weight: 600;
+
+  .el-icon {
+    color: var(--el-color-primary);
+    font-size: 18px;
+  }
+}
+
+.host_form_dialog {
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+
+  .el-dialog__header,
+  .el-dialog__footer {
+    flex: 0 0 auto;
+  }
+
+  .el-dialog__body {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+.management_dialog_title {
+  display: flex;
+  align-items: center;
+  padding-right: 40px;
+  color: var(--el-text-color-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+
+  strong {
+    font: inherit;
+  }
+}
+
+@media (max-width: 680px) {
+  .management_dialog {
+    --management-dialog-padding-x: 16px;
+
+    .el-dialog__header,
+    .el-dialog__body,
+    .el-dialog__footer {
+      padding-left: var(--management-dialog-padding-x);
+      padding-right: var(--management-dialog-padding-x);
+    }
+  }
+
+  .management_form_grid {
+    grid-template-columns: 1fr;
+  }
+
+  .management_toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .management_toolbar_actions {
+    justify-content: flex-end;
+  }
+}

@@ -1,0 +1,57 @@
+// 显式排序模式：整行可拖动，图标仅作为视觉提示。
+.order-sortable-body {
+  .order-drag-column .cell {
+    padding: 0;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  tr {
+    cursor: grab;
+    user-select: none;
+
+    > td.el-table__cell {
+      transition: background-color 0.18s ease;
+    }
+
+    &:hover > td.el-table__cell {
+      background: var(--el-color-primary-light-9) !important;
+    }
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  .order-drag-handle {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--el-color-primary);
+    font-size: 20px;
+    background: var(--el-color-primary-light-9);
+    border: 1px solid var(--el-color-primary-light-7);
+    border-radius: 8px;
+    pointer-events: none;
+
+    svg {
+      width: 1em;
+      height: 1em;
+    }
+  }
+}
+
+.order-sortable-chosen > td.el-table__cell {
+  background: var(--el-color-primary-light-8) !important;
+}
+
+.order-sortable-ghost {
+  opacity: 0.35;
+}
+
+.order-sortable-drag {
+  cursor: grabbing;
+  box-shadow: var(--el-box-shadow-light);
+}

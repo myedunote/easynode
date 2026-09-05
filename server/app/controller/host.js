@@ -3,36 +3,30 @@ import { fileURLToPath } from 'node:url'
 import decryptAndExecuteAsync from '../utils/decrypt-file.js'
 import { RSADecryptAsync, AESEncryptAsync, AESDecryptAsync } from '../utils/encrypt.js'
 import { HostListDB } from '../utils/db-class.js'
+import {
+  addItemsToOrder,
+  moveItemsToGroup,
+  ORDER_DOMAIN,
+  removeItemsFromOrder
+} from '../services/order-service.js'
 const hostListDB = new HostListDB().getInstance()
 const currentDir = dirname(fileURLToPath(import.meta.url))
-
-async function getHostList({ res }) {
-  let data = await hostListDB.findAsync({})
-  data?.sort((a, b) => Number(b.index || 0) - Number(a.index || 0))
-  for (const item of data) {
-    try {
-      let { authType, _id: id, credential } = item
-      if (credential) credential = await AESDecryptAsync(credential)
-      const isConfig = Boolean(authType && item[authType])
-      Object.assign(item, { id, isConfig, password: '', privateKey: '', credential })
-    } catch (error) {
-      logger.error('getHostList error: ', error.message)
-    }
-  }
-  res.success({ data })
-}
 
 async function addHost({ res, request }) {
   let { body } = request
   if (!body.name || !body.host) return res.fail({ msg: 'missing params: name or host' })
   let newRecord = { ...body }
+  delete newRecord.index
+  delete newRecord.id
+  delete newRecord._id
   const { authType, tempKey } = newRecord
   if (newRecord[authType] && tempKey) {
     const clearTempKey = await RSADecryptAsync(tempKey)
     const clearSSHKey = await AESDecryptAsync(newRecord[authType], clearTempKey)
     newRecord[authType] = await AESEncryptAsync(clearSSHKey)
   }
-  await hostListDB.insertAsync(newRecord)
+  const inserted = await hostListDB.insertAsync(newRecord)
+  await addItemsToOrder(ORDER_DOMAIN.HOSTS, inserted)
   res.success()
 }
 
@@ -43,6 +37,11 @@ async function updateHost({ res, request }) {
   if (typeof body !== 'object') return res.fail({ msg: '参数错误' })
   const updateFiled = { ...body }
   const { id, authType, tempKey } = updateFiled
+  delete updateFiled.index
+  delete updateFiled._id
+  delete updateFiled.id
+  const oldRecord = await hostListDB.findOneAsync({ _id: id })
+  if (!oldRecord) return res.fail({ msg: '实例不存在' })
   if (authType && updateFiled[authType]) {
     const clearTempKey = await RSADecryptAsync(tempKey)
     const clearSSHKey = await AESDecryptAsync(updateFiled[authType], clearTempKey)
@@ -56,6 +55,9 @@ async function updateHost({ res, request }) {
   }
   // console.log('updateFiled: ', updateFiled)
   await hostListDB.updateAsync({ _id: id }, { $set: { ...updateFiled } })
+  if (updateFiled.group && updateFiled.group !== oldRecord.group) {
+    await moveItemsToGroup(ORDER_DOMAIN.HOSTS, [id], updateFiled.group)
+  }
   res.success({ msg: '修改成功' })
 }
 
@@ -72,6 +74,7 @@ async function removeHost({ res, request }) {
   let { body: { ids } } = request
   if (!Array.isArray(ids)) return res.fail({ msg: '参数错误' })
   const numRemoved = await hostListDB.removeAsync({ _id: { $in: ids } }, { multi: true })
+  await removeItemsFromOrder(ORDER_DOMAIN.HOSTS, ids)
   res.success({ data: `已移除,数量: ${ numRemoved }` })
 }
 
@@ -87,11 +90,12 @@ async function importHost({ res, request }) {
 
   if (isEasyNodeJson) {
     newHostList = newHostList.map((item) => {
-      item.credential = ''
-      item.isConfig = false
-      delete item.id
-      delete item.isConfig
-      return item
+      const record = { ...item, credential: '' }
+      delete record.id
+      delete record._id
+      delete record.isConfig
+      delete record.index
+      return record
     })
   } else {
     let extraFiels = {
@@ -99,13 +103,14 @@ async function importHost({ res, request }) {
       authType: 'privateKey', password: '', privateKey: '', credential: '', command: '',
       proxyType: '', jumpHosts: [], proxyServer: ''
     }
-    newHostList = newHostList.map((item, index) => {
-      item.port = Number(item.port) || 0
-      item.index = newHostListLen - index
-      return Object.assign(item, { ...extraFiels })
+    newHostList = newHostList.map(item => {
+      const record = { ...item, port: Number(item.port) || 0 }
+      delete record.index
+      return Object.assign(record, { ...extraFiels })
     })
   }
-  await hostListDB.insertAsync(newHostList)
+  const inserted = await hostListDB.insertAsync(newHostList)
+  await addItemsToOrder(ORDER_DOMAIN.HOSTS, inserted)
   res.success({ data: { len: newHostList.length } })
 }
 
@@ -124,7 +129,6 @@ async function updateLastConnectTime({ res, request }) {
 }
 
 export {
-  getHostList,
   addHost,
   updateHost,
   removeHost,

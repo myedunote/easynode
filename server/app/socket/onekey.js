@@ -1,4 +1,3 @@
-import { Server } from 'socket.io'
 import ssh2Module from 'ssh2'
 const { Client: SSHClient } = ssh2Module
 import { sendNoticeAsync } from '../utils/notify.js'
@@ -103,12 +102,12 @@ export default (httpServer) => {
     socket.on('ws_onekey', async ({ hostIds, command, timeout }) => {
       console.log('onekey command:', command)
       const hostList = await hostListDB.findAsync({})
-      const targetHostsInfo = hostList.filter(item => hostIds.some(id => item._id === id)) || {}
+      const hostById = new Map(hostList.map(item => [item._id, item]))
+      const targetHostsInfo = hostIds.map(id => hostById.get(id)).filter(Boolean)
       if (!targetHostsInfo.length) return socket.emit('create_fail', `未找到【${ hostIds }】服务器信息`)
       // 查找 hostInfo -> 并发执行
       socket.emit('ready')
       let execPromise = targetHostsInfo.map((hostInfo, index) => {
-        // eslint-disable-next-line no-async-promise-executor
         return new Promise(async (resolve, reject) => {
           setTimeout(() => reject('执行超时'), timeout * 1000)
           let { host, port } = hostInfo

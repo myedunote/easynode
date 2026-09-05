@@ -12,12 +12,56 @@ import '../shell/sftp_session_manager.dart';
 import 'server_form_data.dart';
 import 'server_group_model.dart';
 import 'server_model.dart';
+import '../order/order_layout.dart';
+
+class HostCatalog {
+  const HostCatalog({
+    required this.hosts,
+    required this.groups,
+    required this.order,
+  });
+
+  final List<ServerModel> hosts;
+  final List<ServerGroupModel> groups;
+  final OrderLayout order;
+
+  factory HostCatalog.fromJson(Map<String, dynamic> json) => HostCatalog(
+    hosts: (json['hosts'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (item) => ServerModel.fromJson(
+            item.map((key, value) => MapEntry(key.toString(), value)),
+          ),
+        )
+        .toList(growable: false),
+    groups: (json['groups'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (item) => ServerGroupModel.fromJson(
+            item.map((key, value) => MapEntry(key.toString(), value)),
+          ),
+        )
+        .toList(growable: false),
+    order: OrderLayout.fromJson(
+      (json['order'] as Map? ?? const {}).map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
+    ),
+  );
+}
 
 /// Backs the server list page and the connect action. The interface lets
 /// widget tests inject a fake without touching real HTTP / RSA code.
 abstract class ServerRepository {
   Future<List<ServerModel>> fetchHosts();
   Future<List<ServerGroupModel>> fetchGroups();
+  Future<HostCatalog> fetchCatalog() async => HostCatalog(
+    hosts: await fetchHosts(),
+    groups: await fetchGroups(),
+    order: const OrderLayout(schemaVersion: 1, revision: 0, sections: []),
+  );
+  Future<OrderLayout> updateOrder(int revision, List<OrderChange> changes) =>
+      throw UnsupportedError('Host ordering is not supported');
   Future<String> createHost(ServerFormData form);
   Future<String> updateHost(ServerFormData form);
   Future<String> deleteHost(String hostId);
@@ -42,31 +86,67 @@ class ApiServerRepository implements ServerRepository {
   final String _publicKeyPem;
   final RsaCrypto _rsa;
   final Random _random;
+  Future<HostCatalog>? _catalogRequest;
 
-  /// Fetch the host list. Server returns `{ data: [host...] }`.
+  Future<HostCatalog> _loadCatalog() {
+    final pending = _catalogRequest;
+    if (pending != null) return pending;
+    final request = _fetchCatalog();
+    _catalogRequest = request;
+    request.then<void>(
+      (_) {
+        if (identical(_catalogRequest, request)) _catalogRequest = null;
+      },
+      onError: (_) {
+        if (identical(_catalogRequest, request)) _catalogRequest = null;
+      },
+    );
+    return request;
+  }
+
+  Future<HostCatalog> _fetchCatalog() async {
+    final response = await _api.getJson('/host-catalog');
+    final data = response['data'];
+    if (data is! Map) {
+      return const HostCatalog(
+        hosts: [],
+        groups: [],
+        order: OrderLayout(schemaVersion: 1, revision: 0, sections: []),
+      );
+    }
+    return HostCatalog.fromJson(
+      data.map((key, value) => MapEntry(key.toString(), value)),
+    );
+  }
+
   @override
   Future<List<ServerModel>> fetchHosts() async {
-    final response = await _api.getJson('/host-list');
-    final raw = response['data'];
-    if (raw is! List) return const [];
-    return raw
-        .whereType<Map<String, dynamic>>()
-        .map(ServerModel.fromJson)
-        .toList(growable: false);
+    return (await _loadCatalog()).hosts;
   }
 
   /// Fetch the server group list. Server returns `{ data: [group...] }`.
   @override
   Future<List<ServerGroupModel>> fetchGroups() async {
-    final response = await _api.getJson('/group');
-    final raw = response['data'];
-    if (raw is! List) return const [];
-    final groups = raw
-        .whereType<Map<String, dynamic>>()
-        .map(ServerGroupModel.fromJson)
-        .toList(growable: false);
-    groups.sort((a, b) => b.index.compareTo(a.index));
-    return groups;
+    return (await _loadCatalog()).groups;
+  }
+
+  @override
+  Future<HostCatalog> fetchCatalog() => _loadCatalog();
+
+  @override
+  Future<OrderLayout> updateOrder(
+    int revision,
+    List<OrderChange> changes,
+  ) async {
+    final response = await _api.putJson('/host-order', {
+      'revision': revision,
+      'changes': changes.map((change) => change.toJson()).toList(),
+    });
+    final data = response['data'];
+    if (data is! Map) throw ApiFailure('排序响应格式异常');
+    return OrderLayout.fromJson(
+      data.map((key, value) => MapEntry(key.toString(), value)),
+    );
   }
 
   @override

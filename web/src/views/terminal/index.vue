@@ -165,7 +165,7 @@ function debouncedRefreshHostList() {
   }
   refreshHostListTimer = setTimeout(async () => {
     try {
-      await $store.getHostList()
+      await $store.getHostCatalog()
     } catch (error) {
       console.error('刷新实例列表失败:', error)
     }
@@ -207,7 +207,7 @@ function handleRemoveAllTab() {
 
 const handleUpdateList = async ({ host }) => {
   try {
-    await $store.getHostList()
+    await $store.getHostCatalog()
     let targetHost = hostList.value.find(item => item.host === host)
     if (targetHost) linkTerminal(targetHost)
   } catch (err) {

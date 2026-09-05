@@ -2,27 +2,35 @@
   <el-dialog
     v-model="visible"
     width="600px"
-    top="225px"
-    modal-class="import_script_dialog"
+    top="9vh"
+    class="management_dialog import_script_dialog"
     append-to-body
-    title="导入脚本配置"
+    title="导入脚本"
     :close-on-click-modal="false"
   >
-    <h2>1. 选择要导入的分组</h2>
-    <el-select v-model="targetGroup" placeholder="请选择分组" style="width: 50%;margin-bottom: 10px;">
-      <el-option
-        v-for="item in groupList"
-        :key="item.id"
-        :label="item.name"
-        :value="item.id"
-      />
-    </el-select>
+    <template #header>
+      <div class="management_dialog_title">导入脚本</div>
+    </template>
+    <div class="import_field">
+      <label>导入到</label>
+      <el-select v-model="targetGroup" placeholder="选择分组">
+        <el-option
+          v-for="item in groupList"
+          :key="item.id"
+          :label="item.name"
+          :value="item.id"
+        />
+      </el-select>
+    </div>
 
-    <h2>2. 选择要导入的文件类型</h2>
+    <div class="import_method_label">导入方式</div>
     <ul class="type_list">
       <li @click="handleFromJson">
-        <svg-icon name="icon-json" class="icon" />
-        <span class="from">JSON</span>
+        <span class="method_icon"><svg-icon name="icon-json" /></span>
+        <span class="method_content">
+          <strong>选择 JSON 文件</strong>
+          <small>支持选择多个 EasyNode 脚本文件</small>
+        </span>
         <input
           ref="jsonInputRef"
           type="file"
@@ -34,8 +42,11 @@
         >
       </li>
       <li @click="() => manualInputVisible = true">
-        <svg-icon name="icon-bianji1" class="icon" />
-        <span class="from">手动输入</span>
+        <span class="method_icon"><svg-icon name="icon-bianji1" /></span>
+        <span class="method_content">
+          <strong>手动输入</strong>
+          <small>每行输入一条脚本指令</small>
+        </span>
       </li>
     </ul>
   </el-dialog>
@@ -43,22 +54,24 @@
   <el-dialog
     v-model="manualInputVisible"
     width="600px"
-    top="150px"
+    top="8vh"
+    class="management_dialog manual_script_dialog"
     title="手动输入"
     :close-on-click-modal="false"
     append-to-body
   >
+    <template #header>
+      <div class="management_dialog_title">手动输入脚本</div>
+    </template>
     <el-input
       v-model="manualInput"
       type="textarea"
-      :autosize="{ minRows: 15 }"
+      :autosize="{ minRows: 12, maxRows: 18 }"
       placeholder="请输入脚本内容，每行一条脚本"
     />
     <template #footer>
-      <div class="manual-input-footer">
-        <el-button @click="manualInputVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleManualImport">导入</el-button>
-      </div>
+      <el-button @click="manualInputVisible = false">取消</el-button>
+      <el-button type="primary" @click="handleManualImport">导入脚本</el-button>
     </template>
   </el-dialog>
 </template>
@@ -106,7 +119,7 @@ const handleJsonFile = (event) => {
         try {
           let jsonContent = JSON.parse(e.target.result)
           resolve(jsonContent)
-        } catch (error) {
+        } catch {
           reject(new Error(`Failed to parse JSON file: ${ file.name }`))
         }
       }
@@ -175,7 +188,6 @@ const handleManualImport = async () => {
       return {
         ...item,
         name: `${ item.command.slice(0, 15) || `脚本${ index + 1 }` }`,
-        index: scriptList.value.length + index + 1,
         description: '手动输入',
         group: targetGroup.value
       }
@@ -195,50 +207,113 @@ const handleManualImport = async () => {
 
 <style lang="scss">
 .import_script_dialog {
-  h2 {
+  .import_field {
+    display: grid;
+    gap: 7px;
+    margin-bottom: 20px;
+
+    label,
+    .import_method_label {
+      color: var(--el-text-color-primary);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .el-select {
+      width: 100%;
+    }
+
+    .el-select__wrapper {
+      min-height: 38px;
+    }
+  }
+
+  .import_method_label {
+    margin-bottom: 8px;
+    color: var(--el-text-color-primary);
     font-size: 14px;
     font-weight: 600;
-    margin: 15px 0 25px 0;
   }
+
   .type_list {
+    margin: 0;
+    padding: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: 12px;
+    list-style: none;
     user-select: none;
+
     li {
-      margin: 0 25px;
+      min-width: 0;
+      height: 94px;
+      padding: 16px;
+      flex: 1;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: center;
-      width: 150px;
-      height: 120px;
+      gap: 12px;
+      border: 1px solid var(--el-border-color);
+      border-radius: 9px;
+      background: var(--el-fill-color-blank);
       cursor: pointer;
-      border-radius: 3px;
+      transition: border-color .15s, background-color .15s;
+
       &:hover {
-        color: var(--el-menu-active-color);
+        border-color: var(--el-color-primary);
+        background: color-mix(in srgb, var(--el-color-primary) 5%, var(--el-bg-color));
       }
-      .icon {
-        width: 35px;
-        height: 35px;
+
+      .method_icon {
+        width: 42px;
+        height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        border-radius: 9px;
+        background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
+        color: var(--el-color-primary);
+
+        svg {
+          width: 24px;
+          height: 24px;
+        }
       }
-      span {
-        display: inline-block;
-      }
-      .from {
-        font-size: 14px;
-        margin: 15px 0;
-      }
-      .type {
-        font-size: 12px;
+
+      .method_content {
+        min-width: 0;
+        display: grid;
+        gap: 5px;
+
+        strong {
+          color: var(--el-text-color-primary);
+          font-size: 14px;
+        }
+
+        small {
+          color: var(--el-text-color-secondary);
+          line-height: 1.45;
+        }
       }
     }
   }
 }
 
-.manual-input-footer {
-  display: flex;
-  justify-content: center;
-  gap: 20px;
+.manual_script_dialog {
+  .el-textarea__inner {
+    padding: 12px;
+    line-height: 1.6;
+    font-family: var(--el-font-family-monospace, monospace);
+  }
+}
+
+@media (max-width: 640px) {
+  .import_script_dialog .type_list {
+    flex-direction: column;
+
+    li {
+      width: 100%;
+    }
+  }
 }
 </style>

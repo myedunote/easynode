@@ -9,10 +9,13 @@ let terminalSettingsSaveQueue = Promise.resolve()
 const useStore = defineStore('global', {
   state: () => ({
     hostList: [],
+    hostCatalogLoaded: false,
     groupList: [],
+    hostOrder: { schemaVersion: 1, revision: 0, sections: [], flatItemIds: [] },
     sshList: [],
     scriptList: [],
     scriptGroupList: [],
+    scriptOrder: { schemaVersion: 1, revision: 0, sections: [] },
     proxyList: [],
     localScriptList: [],
     suspendedSessions: [], // 挂起的会话列表
@@ -27,7 +30,6 @@ const useStore = defineStore('global', {
     serverListConfig: {
       columnSettings: {
         selection: true,
-        index: true,
         name: true,
         username: true,
         host: true,
@@ -54,6 +56,14 @@ const useStore = defineStore('global', {
     aiConfigLoaded: false
   }),
   getters: {
+    orderedHostSections(state) {
+      const hostById = new Map(state.hostList.map(host => [host.id, host,]))
+      const groupById = new Map(state.groupList.map(group => [group.id, group,]))
+      return state.hostOrder.sections.map(section => ({
+        group: groupById.get(section.groupId),
+        hosts: section.itemIds.map(id => hostById.get(id)).filter(Boolean)
+      })).filter(section => section.group)
+    },
     effectiveTerminalSettings(state) {
       if (!state.terminalAppearanceDraft) return state.terminalSettings
       return {
@@ -93,26 +103,38 @@ const useStore = defineStore('global', {
     async getMainData() {
       await Promise.all([
         this.getAIConfig(),
-        this.getGroupList(),
-        this.getHostList(),
+        this.getHostCatalog(),
         this.getSSHList(),
-        this.getScriptList(),
-        this.getScriptGroupList(),
+        this.getScriptCatalog(),
         this.getPlusInfo(),
         this.getProxyList(),
         this.getTerminalSettings(),
         this.getServerListConfig(),
       ])
     },
-    async getHostList() {
-      let { data: newHostList } = await $api.getHostList()
+    async getHostCatalog() {
+      let { data: catalog } = await $api.getHostCatalog()
+      let newHostList = catalog.hosts || []
       newHostList = newHostList.map(newHostObj => {
         let { expired = null } = newHostObj
         newHostObj.expired = (isValidDate(expired)) ? dayjs(expired).format('YYYY-MM-DD') : '--'
         const oldHostObj = this.hostList.find(({ id }) => id === newHostObj.id)
         return oldHostObj ? Object.assign({}, { ...oldHostObj }, { ...newHostObj }) : newHostObj
       })
-      this.$patch({ hostList: newHostList })
+      this.$patch({
+        hostList: newHostList,
+        hostCatalogLoaded: true,
+        groupList: catalog.groups || [],
+        hostOrder: catalog.order
+      })
+      const savedSort = localStorage.getItem('host_table_sort')
+      if (savedSort) {
+        try {
+          if (JSON.parse(savedSort)?.prop === 'index') localStorage.removeItem('host_table_sort')
+        } catch {
+          localStorage.removeItem('host_table_sort')
+        }
+      }
     },
     async getAIConfig() {
       try {
@@ -147,21 +169,17 @@ const useStore = defineStore('global', {
       })
       return this.aiConfig.ui
     },
-    async getGroupList() {
-      const { data: groupList } = await $api.getGroupList()
-      this.$patch({ groupList })
-    },
     async getSSHList() {
       const { data: sshList } = await $api.getSSHList()
       this.$patch({ sshList })
     },
-    async getScriptList() {
-      const { data: scriptList } = await $api.getScriptList()
-      this.$patch({ scriptList })
-    },
-    async getScriptGroupList() {
-      const { data: scriptGroupList } = await $api.getScriptGroupList()
-      this.$patch({ scriptGroupList })
+    async getScriptCatalog() {
+      const { data: catalog } = await $api.getScriptCatalog()
+      this.$patch({
+        scriptList: catalog.scripts || [],
+        scriptGroupList: catalog.groups || [],
+        scriptOrder: catalog.order
+      })
     },
     async getLocalScriptList() {
       const { data: localScriptList } = await $api.getLocalScriptList()

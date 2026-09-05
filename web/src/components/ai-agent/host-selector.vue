@@ -11,7 +11,7 @@
     size="small"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <el-option-group v-for="group in grouped" :key="group.name" :label="group.name">
+    <el-option-group v-for="group in grouped" :key="group.id" :label="group.name">
       <el-option
         v-for="host in group.hosts"
         :key="host._id"
@@ -30,11 +30,11 @@
 </template>
 
 <script setup>
-import { computed, getCurrentInstance } from 'vue'
+import { computed, getCurrentInstance, watch } from 'vue'
 
 const { proxy: { $store } } = getCurrentInstance()
 
-defineProps({
+const props = defineProps({
   modelValue: {
     type: Array,
     default: () => []
@@ -43,22 +43,31 @@ defineProps({
 
 const emit = defineEmits(['update:modelValue',])
 
-const groupName = computed(() => {
-  const map = new Map(($store.groupList || []).map((group) => [group._id, group.name,]))
-  return (id) => map.get(id) || '默认分组'
-})
+const validHostIds = computed(() => new Set(
+  $store.hostList.flatMap(host => [host.id, host._id,].filter(Boolean))
+))
+
+watch(
+  [() => $store.hostCatalogLoaded, validHostIds, () => props.modelValue,],
+  ([hostCatalogLoaded, hostIds, selectedIds,]) => {
+    if (!hostCatalogLoaded || !selectedIds.length) return
+    const nextSelectedIds = selectedIds.filter(id => hostIds.has(id))
+    if (nextSelectedIds.length !== selectedIds.length) {
+      emit('update:modelValue', nextSelectedIds)
+    }
+  },
+  { immediate: true }
+)
 
 const grouped = computed(() => {
-  const buckets = new Map()
-  for (const host of $store.hostList || []) {
-    const name = groupName.value(host.group)
-    if (!buckets.has(name)) buckets.set(name, [])
-    buckets.get(name).push({
+  return $store.orderedHostSections.map(({ group, hosts }) => ({
+    id: group.id,
+    name: group.name,
+    hosts: hosts.map(host => ({
       ...host,
       aiDisabled: host.aiPolicy?.enabled === false
-    })
-  }
-  return [...buckets.entries(),].map(([name, hosts,]) => ({ name, hosts }))
+    }))
+  })).filter(group => group.hosts.length)
 })
 </script>
 

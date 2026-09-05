@@ -8,6 +8,7 @@ import {
   groupConfDBPath,
   scriptsDBPath,
   scriptGroupDBPath,
+  orderDBPath,
   onekeyDBPath,
   plusDBPath,
   aiConfigDBPath,
@@ -114,6 +115,17 @@ export class ScriptGroupDB {
   }
   getInstance() {
     return ScriptGroupDB.instance
+  }
+}
+
+export class OrderDB {
+  constructor() {
+    if (!OrderDB.instance) {
+      OrderDB.instance = new Datastore({ filename: orderDBPath, autoload: true })
+    }
+  }
+  getInstance() {
+    return OrderDB.instance
   }
 }
 

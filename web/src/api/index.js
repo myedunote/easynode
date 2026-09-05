@@ -42,8 +42,11 @@ export default {
   decryptPrivateKey(data) {
     return axios({ url: '/decrypt-private-key', method: 'post', data })
   },
-  getHostList() {
-    return axios({ url: '/host-list', method: 'get' })
+  getHostCatalog() {
+    return axios({ url: '/host-catalog', method: 'get' })
+  },
+  updateHostOrder(data) {
+    return axios({ url: '/host-order', method: 'put', data, skipErrorMessage: true })
   },
   addHost(data) {
     return axios({ url: '/host-save', method: 'post', data })
@@ -105,9 +108,6 @@ export default {
   updateNotifyList(data) {
     return axios({ url: '/notify', method: 'put', data })
   },
-  getGroupList() {
-    return axios({ url: '/group', method: 'get' })
-  },
   addGroup(data) {
     return axios({ url: '/group', method: 'post', data })
   },
@@ -117,8 +117,11 @@ export default {
   deleteGroup(id) {
     return axios({ url: `/group/${ id }`, method: 'delete' })
   },
-  getScriptList(params = {}) {
-    return axios({ url: '/script', method: 'get', params })
+  getScriptCatalog() {
+    return axios({ url: '/script-catalog', method: 'get' })
+  },
+  updateScriptOrder(data) {
+    return axios({ url: '/script-order', method: 'put', data, skipErrorMessage: true })
   },
   importScript(data) {
     return axios({ url: '/import-script', method: 'post', data })
@@ -137,9 +140,6 @@ export default {
   },
   batchRemoveScript(data) {
     return axios({ url: '/batch-remove-script', method: 'post', data })
-  },
-  getScriptGroupList() {
-    return axios({ url: '/script-group', method: 'get' })
   },
   addScriptGroup(data) {
     return axios({ url: '/script-group', method: 'post', data })

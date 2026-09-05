@@ -25,11 +25,11 @@ class ServerAiPolicy {
   }
 }
 
-/// Native-side projection of `/api/v1/host-list` items.
+/// Native-side projection of `/api/v1/host-catalog` items.
 ///
 /// Only fields needed for the native list and connect action are kept;
 /// passwords, private keys, etc. are intentionally excluded — the server
-/// also clears them in its host-list response.
+/// also clears them in its catalog response.
 class ServerModel {
   const ServerModel({
     required this.id,
@@ -41,7 +41,6 @@ class ServerModel {
     this.credential,
     required this.connectType,
     required this.group,
-    required this.index,
     required this.proxyType,
     required this.jumpHosts,
     required this.proxyServer,
@@ -64,7 +63,6 @@ class ServerModel {
   final String? credential;
   final String connectType;
   final String group;
-  final int index;
   final String proxyType;
   final List<String> jumpHosts;
   final String proxyServer;
@@ -112,7 +110,6 @@ class ServerModel {
       credential: (json['credential'] ?? '').toString(),
       connectType: (json['connectType'] ?? '').toString(),
       group: (json['group'] ?? '').toString(),
-      index: _parseInt(json['index'], fallback: 0),
       proxyType: (json['proxyType'] ?? '').toString(),
       jumpHosts: jumpHosts,
       proxyServer: (json['proxyServer'] ?? '').toString(),
@@ -125,12 +122,6 @@ class ServerModel {
       isConfig: json['isConfig'] == true,
       aiPolicy: ServerAiPolicy.fromJson(json['aiPolicy']),
     );
-  }
-
-  static int _parseInt(Object? value, {required int fallback}) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? fallback;
   }
 
   static DateTime? _parseDate(Object? value) {

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/top_notice.dart';
+import '../../core/api/api_result.dart';
+import '../order/order_layout.dart';
 import '../../l10n/app_localizations.dart';
 import '../../state/api_providers.dart';
 import '../../state/plus_info_notifier.dart';
@@ -28,6 +29,9 @@ class ScriptGroupsPage extends ConsumerStatefulWidget {
 
 class _ScriptGroupsPageState extends ConsumerState<ScriptGroupsPage> {
   bool _busy = false;
+  bool _orderMode = false;
+  int _orderRevision = 0;
+  List<ScriptGroupModel> _orderDraft = const [];
 
   bool _ensurePlusOrWarn() {
     if (ref.read(isPlusActiveProvider)) return true;
@@ -40,17 +44,7 @@ class _ScriptGroupsPageState extends ConsumerState<ScriptGroupsPage> {
     if (!_ensurePlusOrWarn()) return;
     final c = context.colors;
     final l = AppLocalizations.of(context);
-    final groups =
-        ref.read(scriptGroupListProvider).valueOrNull ??
-        const <ScriptGroupModel>[];
-    final nextIndex =
-        group?.index ??
-        (groups.fold<int>(0, (m, g) => g.index > m ? g.index : m) + 1);
-    final form = ScriptGroupFormData(
-      id: group?.id,
-      name: group?.name ?? '',
-      index: nextIndex,
-    );
+    final form = ScriptGroupFormData(id: group?.id, name: group?.name ?? '');
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -149,13 +143,29 @@ class _ScriptGroupsPageState extends ConsumerState<ScriptGroupsPage> {
         ),
         iconTheme: IconThemeData(color: c.text),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: _AddChip(
-              label: l.tr('scripts.addGroup'),
-              onTap: _busy ? null : () => _openForm(),
+          if (_orderMode) ...[
+            TextButton(
+              onPressed: _cancelOrder,
+              child: Text(l.tr('common.cancel')),
             ),
-          ),
+            FilledButton(
+              onPressed: _saveOrder,
+              child: Text(l.tr('common.save')),
+            ),
+          ] else ...[
+            IconButton(
+              tooltip: l.tr('common.adjustOrder'),
+              onPressed: _startOrder,
+              icon: const Icon(Icons.swap_vert),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: _AddChip(
+                label: l.tr('scripts.addGroup'),
+                onTap: _busy ? null : () => _openForm(),
+              ),
+            ),
+          ],
         ],
       ),
       body: groupsAsync.when(
@@ -172,6 +182,40 @@ class _ScriptGroupsPageState extends ConsumerState<ScriptGroupsPage> {
           final counts = <String, int>{for (final g in groups) g.id: 0};
           for (final s in scripts) {
             counts[s.group] = (counts[s.group] ?? 0) + 1;
+          }
+          if (_orderMode) {
+            return ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              itemCount: _orderDraft.length,
+              onReorderItem: _reorder,
+              itemBuilder: (context, index) {
+                final group = _orderDraft[index];
+                return Row(
+                  key: ValueKey('order-${group.id}'),
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _GroupCard(
+                          group: group,
+                          scriptCount: counts[group.id] ?? 0,
+                          onEdit: null,
+                          onDelete: null,
+                        ),
+                      ),
+                    ),
+                    ReorderableDragStartListener(
+                      index: index,
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Icon(Icons.drag_handle),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
           }
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -202,6 +246,69 @@ class _ScriptGroupsPageState extends ConsumerState<ScriptGroupsPage> {
         },
       ),
     );
+  }
+
+  Future<void> _startOrder() async {
+    final catalog = await ref.read(scriptRepositoryProvider).fetchCatalog();
+    final byId = {for (final group in catalog.groups) group.id: group};
+    if (!mounted) return;
+    setState(() {
+      _orderRevision = catalog.order.revision;
+      _orderDraft = catalog.order.sections
+          .map((section) => byId[section.groupId])
+          .whereType<ScriptGroupModel>()
+          .toList();
+      _orderMode = true;
+    });
+  }
+
+  void _cancelOrder() => setState(() {
+    _orderMode = false;
+    _orderDraft = const [];
+  });
+
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      final draft = [..._orderDraft];
+      final group = draft.removeAt(oldIndex);
+      draft.insert(newIndex, group);
+      _orderDraft = draft;
+    });
+  }
+
+  Future<void> _saveOrder() async {
+    try {
+      await ref.read(scriptRepositoryProvider).updateOrder(_orderRevision, [
+        OrderChange(
+          scope: 'groups',
+          orderedIds: _orderDraft.map((group) => group.id).toList(),
+        ),
+      ]);
+      await Future.wait([
+        ref.read(scriptGroupListProvider.notifier).refresh(),
+        ref.read(scriptListProvider.notifier).refresh(),
+      ]);
+      if (mounted) _cancelOrder();
+    } catch (error) {
+      if (!mounted) return;
+      _cancelOrder();
+      if (error is ApiFailure && error.statusCode == 409) {
+        await Future.wait([
+          ref.read(scriptGroupListProvider.notifier).refresh(),
+          ref.read(scriptListProvider.notifier).refresh(),
+        ]);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).tr('order.conflict')),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
   }
 }
 
@@ -483,20 +590,17 @@ class _GroupForm extends ConsumerStatefulWidget {
 class _GroupFormState extends ConsumerState<_GroupForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
-  late final TextEditingController _indexCtrl;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.form.name);
-    _indexCtrl = TextEditingController(text: widget.form.index.toString());
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _indexCtrl.dispose();
     super.dispose();
   }
 
@@ -506,7 +610,6 @@ class _GroupFormState extends ConsumerState<_GroupForm> {
     final l = AppLocalizations.of(context);
     setState(() => _saving = true);
     widget.form.name = _nameCtrl.text.trim();
-    widget.form.index = int.tryParse(_indexCtrl.text.trim()) ?? 0;
     final repo = ref.read(scriptRepositoryProvider);
     try {
       final message = widget.form.isEdit
@@ -581,26 +684,6 @@ class _GroupFormState extends ConsumerState<_GroupForm> {
               validator: (v) => (v ?? '').trim().isEmpty
                   ? l.tr('scripts.validation.groupName')
                   : null,
-              decoration: _decoration(),
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                '序号',
-                style: TextStyle(
-                  color: c.softMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            TextFormField(
-              controller: _indexCtrl,
-              cursorColor: c.primary,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: TextStyle(color: c.text, fontSize: 14),
               decoration: _decoration(),
             ),
             const SizedBox(height: 16),

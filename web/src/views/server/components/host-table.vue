@@ -8,40 +8,69 @@
       @sort-change="handleSortChange"
       @selection-change="handleSelectionChange"
     >
-      <el-table-column v-if="props.columnSettings.selection" type="selection" reserve-selection />
       <el-table-column
-        v-if="props.columnSettings.index"
-        property="index"
-        label="序号"
-        sortable
-        width="100px"
+        v-if="orderMode"
+        width="64"
+        align="center"
+        class-name="order-drag-column"
+      >
+        <template #default><el-icon class="order-drag-handle"><Rank /></el-icon></template>
+      </el-table-column>
+      <el-table-column
+        v-if="props.columnSettings.selection && !orderMode"
+        type="selection"
+        reserve-selection
+        width="52"
       />
       <el-table-column
         v-if="props.columnSettings.name"
         label="名称"
         property="name"
-        sortable
+        min-width="200"
+        :sortable="!orderMode"
         :sort-method="compareHostNames"
       >
         <template #default="scope">
-          <span v-if="scope.row.connectType !== 'rdp'">
+          <span v-if="scope.row.connectType !== 'rdp'" class="host_name">
             <svg-icon name="icon-linux" class="icon" />
             {{ scope.row.name }}
           </span>
-          <span v-else>
+          <span v-else class="host_name">
             <svg-icon name="icon-Windows" class="icon" />
             {{ scope.row.name }}
           </span>
         </template>
       </el-table-column>
-      <el-table-column v-if="props.columnSettings.username" property="username" label="用户名" />
-      <el-table-column v-if="props.columnSettings.host" property="host" label="IP">
+      <el-table-column
+        v-if="props.columnSettings.username"
+        property="username"
+        label="用户名"
+        min-width="110"
+      />
+      <el-table-column
+        v-if="props.columnSettings.host"
+        property="host"
+        label="IP"
+        min-width="150"
+      >
         <template #default="scope">
-          <span @click="handleCopy(scope.row.host)">{{ scope.row.host }}</span>
+          <el-tooltip content="点击复制" placement="top" :show-after="500">
+            <span class="copyable_value" @click="handleCopy(scope.row.host)">{{ scope.row.host }}</span>
+          </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column v-if="props.columnSettings.port" property="port" label="端口" />
-      <el-table-column v-if="props.columnSettings.authType" property="port" label="认证类型">
+      <el-table-column
+        v-if="props.columnSettings.port"
+        property="port"
+        label="端口"
+        width="80"
+      />
+      <el-table-column
+        v-if="props.columnSettings.authType"
+        property="port"
+        label="认证类型"
+        min-width="110"
+      >
         <template #default="scope">{{ scope.row.authType === 'password' ? '密码' : '密钥' }}</template>
       </el-table-column>
       <el-table-column
@@ -49,6 +78,7 @@
         property="port"
         show-overflow-tooltip
         label="代理类型"
+        min-width="120"
       >
         <template #default="scope">{{ formatProxyType(scope.row) }}</template>
       </el-table-column>
@@ -56,13 +86,15 @@
         v-if="props.columnSettings.expired"
         property="expired"
         label="到期时间"
-        sortable
+        :sortable="!orderMode"
+        min-width="120"
       />
       <el-table-column
         v-if="props.columnSettings.consoleUrl"
         property="consoleUrl"
         show-overflow-tooltip
         label="控制台URL"
+        min-width="180"
       >
         <template #default="scope">
           <span v-if="scope.row.consoleUrl" class="link" @click="handleToConsole(scope.row)">{{ scope.row.consoleUrl }}</span>
@@ -74,6 +106,7 @@
         show-overflow-tooltip
         property="tag"
         label="标签"
+        min-width="140"
       >
         <template #default="scope">
           <span v-if="scope.row.tag?.length">
@@ -90,48 +123,59 @@
           <span v-else>--</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" fixed="right" :width="isMobileScreen ? 'auto' : '260px'">
+      <el-table-column
+        v-if="!orderMode"
+        label="操作"
+        fixed="right"
+        width="138px"
+        align="right"
+        header-align="right"
+      >
         <template #default="{ row }">
-          <el-dropdown v-if="isMobileScreen" trigger="click">
-            <span class="link">
-              操作
-              <el-icon class="el-icon--right">
-                <arrow-down />
-              </el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item>
-                  <el-tooltip
-                    :disabled="row.isConfig"
-                    effect="dark"
-                    content="请先配置ssh连接信息"
-                    placement="left"
-                  >
-                    <el-button type="success" :disabled="!row.isConfig" @click="handleSSH(row)">连接</el-button>
-                  </el-tooltip>
-                </el-dropdown-item>
-                <el-dropdown-item>
-                  <el-button type="primary" @click="handleUpdate(row)">配置</el-button>
-                </el-dropdown-item>
-                <el-dropdown-item>
-                  <el-button type="danger" @click="handleRemoveHost(row)">删除</el-button>
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <template v-else>
+          <div class="row_actions">
             <el-tooltip
               :disabled="row.isConfig"
               effect="dark"
-              content="请先配置ssh连接信息"
+              content="请先配置连接信息"
               placement="left"
             >
-              <el-button type="success" :disabled="!row.isConfig" @click="handleSSH(row)">连接</el-button>
+              <span>
+                <el-button
+                  type="primary"
+                  text
+                  size="small"
+                  :icon="Connection"
+                  class="row_connect_btn"
+                  :disabled="!row.isConfig"
+                  @click="handleSSH(row)"
+                >
+                  连接
+                </el-button>
+              </span>
             </el-tooltip>
-            <el-button type="primary" @click="handleUpdate(row)">配置</el-button>
-            <el-button type="danger" @click="handleRemoveHost(row)">删除</el-button>
-          </template>
+            <el-dropdown trigger="click" @command="command => handleRowCommand(command, row)">
+              <el-button
+                class="row_more_btn"
+                :icon="MoreFilled"
+                text
+                aria-label="实例操作"
+                title="实例操作"
+              />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit" :icon="EditPen">编辑配置</el-dropdown-item>
+                  <el-dropdown-item
+                    command="remove"
+                    :icon="Delete"
+                    divided
+                    class="danger_menu_item"
+                  >
+                    删除实例
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -139,11 +183,11 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, nextTick } from 'vue'
-import { ArrowDown } from '@element-plus/icons-vue'
-import useMobileWidth from '@/composables/useMobileWidth'
+import { ref, computed, getCurrentInstance, nextTick, watch } from 'vue'
+import { Connection, Delete, EditPen, MoreFilled, Rank } from '@element-plus/icons-vue'
 import clipboard from '@/utils/clipboard'
 import { compareHostNames } from '@/utils/host-sort'
+import useListOrder from '@/composables/useListOrder'
 
 const { proxy: { $message, $messageBox, $api, $router, $store } } = getCurrentInstance()
 
@@ -156,7 +200,6 @@ const props = defineProps({
     type: Object,
     default: () => ({
       selection: true,
-      index: true,
       name: true,
       username: true,
       host: true,
@@ -167,12 +210,12 @@ const props = defineProps({
       consoleUrl: true,
       tag: true
     })
-  }
+  },
+  orderMode: Boolean
 })
 
-const emit = defineEmits(['update-list', 'update-host', 'select-change',])
+const emit = defineEmits(['update-list', 'update-host', 'select-change', 'reorder',])
 
-const { isMobileScreen } = useMobileWidth()
 const tableRef = ref(null)
 
 const hosts = computed(() => props.hosts)
@@ -184,6 +227,7 @@ const handleUpdate = (hostInfo) => {
 }
 
 const handleToConsole = ({ consoleUrl }) => {
+  if (props.orderMode) return
   if (!consoleUrl) return $message({ message: '未配置服务商控制台地址', type: 'warning', center: true })
   window.open(consoleUrl)
 }
@@ -193,13 +237,36 @@ const handleSSH = async (row) => {
   $router.push({ path: connectType === 'rdp' ? '/rdp' : '/terminal', query: { hostIds: id } })
 }
 
+const handleRowCommand = (command, row) => {
+  if (command === 'edit') return handleUpdate(row)
+  if (command === 'remove') return handleRemoveHost(row)
+}
+
 const defaultSortLocal = localStorage.getItem('host_table_sort')
-const defaultSort = ref(defaultSortLocal ? JSON.parse(defaultSortLocal) : { prop: 'index', order: null }) // 'ascending' or 'descending'
+let parsedDefaultSort = { prop: null, order: null }
+try {
+  parsedDefaultSort = defaultSortLocal ? JSON.parse(defaultSortLocal) : parsedDefaultSort
+  if (parsedDefaultSort?.prop === 'index') parsedDefaultSort = { prop: null, order: null }
+} catch {
+  localStorage.removeItem('host_table_sort')
+}
+const defaultSort = ref(parsedDefaultSort)
 
 const handleSortChange = (sortObj) => {
+  if (props.orderMode) return
   defaultSort.value = sortObj
   localStorage.setItem('host_table_sort', JSON.stringify(sortObj))
 }
+
+useListOrder({
+  rootRef: tableRef,
+  enabled: computed(() => props.orderMode),
+  onMove: (oldIndex, newIndex) => emit('reorder', { oldIndex, newIndex })
+})
+
+watch(() => props.orderMode, enabled => {
+  if (enabled) nextTick(() => tableRef.value?.clearSort())
+})
 
 const selectHosts = ref([])
 const handleSelectionChange = (val) => {
@@ -254,6 +321,7 @@ const handleRemoveHost = async ({ id }) => {
 }
 
 const handleCopy = (host) => {
+  if (props.orderMode) return
   clipboard.copy(host)
 }
 
@@ -276,17 +344,97 @@ const formatProxyType = ({ proxyType, jumpHosts, proxyServer }) => {
 
 <style lang="scss" scoped>
 .host_card {
-  margin: 0px 10px;
-  // transition: all 0.5s;
+  margin: 0 16px 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  overflow: hidden;
+
+  :deep(.el-table) {
+    --el-table-header-bg-color: var(--el-fill-color-light);
+    --el-table-row-hover-bg-color: var(--el-fill-color-light);
+  }
+
+  :deep(.el-table th.el-table__cell) {
+    height: 46px;
+    color: var(--el-text-color-secondary);
+    font-weight: 600;
+  }
+
+  :deep(.el-table td.el-table__cell) {
+    padding: 13px 0;
+  }
+
+  :deep(.el-table__inner-wrapper::before) {
+    display: none;
+  }
+
   .no_client_data {
     font-size: 14px;
     font-weight: normal;
     line-height: 23px;
     text-align: center;
-    color: var(--el-color-warning);;
+    color: var(--el-color-warning);
   }
   .host_info {
     padding: 0 20px;
   }
+}
+
+.host_name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+  white-space: nowrap;
+
+  .icon {
+    flex: 0 0 auto;
+  }
+}
+
+.copyable_value {
+  cursor: copy;
+  border-bottom: 1px dashed transparent;
+  transition: color 0.18s ease, border-color 0.18s ease;
+
+  &:hover {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary-light-5);
+  }
+}
+
+.row_actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+
+  :deep(.el-button) {
+    height: 32px;
+    border-radius: 6px;
+  }
+
+  .row_connect_btn {
+    padding: 0 10px;
+  }
+
+  .row_more_btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: var(--el-text-color-secondary);
+
+    &:hover,
+    &:focus-visible {
+      color: var(--el-text-color-primary);
+      background: var(--el-fill-color);
+    }
+  }
+}
+
+:deep(.danger_menu_item) {
+  color: var(--el-color-danger);
 }
 </style>

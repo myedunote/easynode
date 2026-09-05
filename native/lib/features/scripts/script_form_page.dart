@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/app_color_theme.dart';
@@ -13,7 +12,7 @@ import 'script_repository.dart';
 
 /// Script editor — full-screen page pushed from the scripts list. Mirrors
 /// design node `fbTKb` and feature parity with web `script-edit.vue`:
-/// group picker, name/description/index, command body, and Base64 toggle.
+/// group picker, name/description, command body, and Base64 toggle.
 class ScriptFormPage extends ConsumerStatefulWidget {
   const ScriptFormPage({
     super.key,
@@ -39,7 +38,6 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
-  final _indexCtrl = TextEditingController();
   final _commandCtrl = TextEditingController();
 
   late ScriptFormData _form;
@@ -48,7 +46,6 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
   @override
   void initState() {
     super.initState();
-    final scripts = ref.read(scriptListProvider).valueOrNull ?? const [];
     if (widget.script != null) {
       final s = widget.script!;
       _form = ScriptFormData(
@@ -56,29 +53,21 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
         name: s.name,
         description: s.description,
         command: s.command,
-        index: s.index ?? 0,
         group: s.group,
         useBase64: s.useBase64,
       );
     } else {
-      // Web behaviour: next index is max+1 within the target group;
-      // never pick `builtin` as the default since the picker forbids it.
+      // Never pick `builtin` as the default since the picker forbids it.
       final group =
           (widget.defaultGroup == null ||
               widget.defaultGroup!.isEmpty ||
               widget.defaultGroup == 'builtin')
           ? 'default'
           : widget.defaultGroup!;
-      final nextIndex =
-          scripts
-              .where((s) => s.group == group)
-              .fold<int>(0, (m, s) => (s.index ?? 0) > m ? s.index! : m) +
-          1;
       _form = ScriptFormData(
         name: '',
         description: '',
         command: widget.defaultCommand ?? '',
-        index: nextIndex,
         group: group,
         useBase64: false,
       );
@@ -90,7 +79,6 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
   void dispose() {
     _nameCtrl.dispose();
     _descriptionCtrl.dispose();
-    _indexCtrl.dispose();
     _commandCtrl.dispose();
     super.dispose();
   }
@@ -98,7 +86,6 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
   void _syncControllers() {
     _nameCtrl.text = _form.name;
     _descriptionCtrl.text = _form.description;
-    _indexCtrl.text = _form.index.toString();
     _commandCtrl.text = _form.command;
   }
 
@@ -114,7 +101,6 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
         name: _nameCtrl.text.trim(),
         description: _descriptionCtrl.text.trim(),
         command: _commandCtrl.text,
-        index: int.tryParse(_indexCtrl.text.trim()) ?? 0,
         group: _form.group,
         useBase64: _form.useBase64,
       );
@@ -154,10 +140,7 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
         elevation: 0,
         title: Text(
           editing ? l.tr('scripts.editScript') : l.tr('scripts.addScript'),
-          style: TextStyle(
-            color: c.text,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: c.text, fontWeight: FontWeight.w700),
         ),
         iconTheme: IconThemeData(color: c.text),
       ),
@@ -197,21 +180,6 @@ class _ScriptFormPageState extends ConsumerState<ScriptFormPage> {
                 _LabeledField(
                   label: l.tr('scripts.field.description'),
                   child: _SoftTextField(controller: _descriptionCtrl),
-                ),
-                _LabeledField(
-                  label:
-                      '${l.tr('scripts.field.index')}（${l.tr('scripts.field.indexHint')}）',
-                  child: SizedBox(
-                    width: 140,
-                    child: _SoftTextField(
-                      controller: _indexCtrl,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -351,19 +319,10 @@ class _LabeledField extends StatelessWidget {
 }
 
 class _SoftTextField extends StatelessWidget {
-  const _SoftTextField({
-    required this.controller,
-    this.validator,
-    this.keyboardType,
-    this.inputFormatters,
-    this.textAlign = TextAlign.start,
-  });
+  const _SoftTextField({required this.controller, this.validator});
 
   final TextEditingController controller;
   final FormFieldValidator<String>? validator;
-  final TextInputType? keyboardType;
-  final List<TextInputFormatter>? inputFormatters;
-  final TextAlign textAlign;
 
   @override
   Widget build(BuildContext context) {
@@ -371,9 +330,6 @@ class _SoftTextField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       validator: validator,
-      keyboardType: keyboardType,
-      inputFormatters: inputFormatters,
-      textAlign: textAlign,
       cursorColor: c.primary,
       style: TextStyle(color: c.text, fontSize: 14),
       decoration: InputDecoration(
@@ -390,10 +346,7 @@ class _SoftTextField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(
-            color: c.primary,
-            width: 1.2,
-          ),
+          borderSide: BorderSide(color: c.primary, width: 1.2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -401,10 +354,7 @@ class _SoftTextField extends StatelessWidget {
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(
-            color: c.danger,
-            width: 1.4,
-          ),
+          borderSide: BorderSide(color: c.danger, width: 1.4),
         ),
       ),
     );
@@ -431,7 +381,7 @@ class _GroupSelector extends StatelessWidget {
         .toList(growable: false);
     final current = groups.firstWhere(
       (g) => g.id == selected,
-      orElse: () => ScriptGroupModel(id: selected, name: selected, index: 0),
+      orElse: () => ScriptGroupModel(id: selected, name: selected),
     );
     return InkWell(
       borderRadius: BorderRadius.circular(10),
@@ -463,10 +413,7 @@ class _GroupSelector extends StatelessWidget {
                           ),
                         ),
                         trailing: picked
-                            ? Icon(
-                                Icons.check,
-                                color: c.primary,
-                              )
+                            ? Icon(Icons.check, color: c.primary)
                             : null,
                         onTap: () => Navigator.of(sheetContext).pop(g.id),
                       );
@@ -497,18 +444,12 @@ class _GroupSelector extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: current.displayName.isEmpty
-                      ? c.softMuted
-                      : c.text,
+                  color: current.displayName.isEmpty ? c.softMuted : c.text,
                   fontSize: 14,
                 ),
               ),
             ),
-            Icon(
-              Icons.keyboard_arrow_down,
-              size: 18,
-              color: c.softMuted,
-            ),
+            Icon(Icons.keyboard_arrow_down, size: 18, color: c.softMuted),
           ],
         ),
       ),
@@ -577,10 +518,7 @@ class _CommandEditor extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(
-              color: c.primary,
-              width: 1.2,
-            ),
+            borderSide: BorderSide(color: c.primary, width: 1.2),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
@@ -634,9 +572,7 @@ class _EncodingOption extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: selected
-                            ? c.primary
-                            : c.text,
+                        color: selected ? c.primary : c.text,
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
@@ -645,9 +581,7 @@ class _EncodingOption extends StatelessWidget {
                   Icon(
                     Icons.info_outline,
                     size: 14,
-                    color: selected
-                        ? c.primary
-                        : c.softMuted,
+                    color: selected ? c.primary : c.softMuted,
                   ),
                 ],
               ),
@@ -655,9 +589,7 @@ class _EncodingOption extends StatelessWidget {
               Text(
                 hint,
                 style: TextStyle(
-                  color: selected
-                      ? c.muted
-                      : c.softMuted,
+                  color: selected ? c.muted : c.softMuted,
                   fontSize: 11,
                   height: 1.4,
                 ),

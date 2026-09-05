@@ -10,7 +10,6 @@ async function getServerListConfig({ res }) {
       const defaultConfig = {
         columnSettings: {
           selection: true,
-          index: true,
           name: true,
           username: true,
           host: true,
@@ -42,18 +41,23 @@ async function saveServerListConfig({ res, request }) {
       return res.fail({ msg: '参数错误' })
     }
 
+    const sanitizedBody = { ...body }
+    if (sanitizedBody.columnSettings) {
+      sanitizedBody.columnSettings = { ...sanitizedBody.columnSettings }
+      delete sanitizedBody.columnSettings.index
+    }
     const existingConfig = await serverListDB.findOneAsync({})
 
     if (existingConfig) {
       // 更新现有配置
       await serverListDB.updateAsync(
         { _id: existingConfig._id },
-        { $set: body },
+        { $set: sanitizedBody },
         {}
       )
     } else {
       // 插入新配置
-      await serverListDB.insertAsync(body)
+      await serverListDB.insertAsync(sanitizedBody)
     }
 
     res.success({ msg: '保存成功' })
@@ -67,4 +71,3 @@ export {
   getServerListConfig,
   saveServerListConfig
 }
-

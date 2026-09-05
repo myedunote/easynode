@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:easynode_native/core/api/api_result.dart';
 import 'package:easynode_native/core/ui/app_color_theme.dart';
+import 'package:easynode_native/features/order/order_layout.dart';
 import 'package:easynode_native/features/servers/server_form_data.dart';
 import 'package:easynode_native/features/servers/server_model.dart';
 import 'package:easynode_native/features/servers/server_group_model.dart';
@@ -18,7 +20,7 @@ import 'package:easynode_native/state/api_providers.dart';
 import 'package:easynode_native/state/host_list_notifier.dart';
 import 'package:easynode_native/state/group_list_notifier.dart';
 
-class _FakeRepository implements ServerRepository {
+class _FakeRepository extends ServerRepository {
   _FakeRepository({
     this.hosts = const [],
     this.groups = const [],
@@ -36,6 +38,7 @@ class _FakeRepository implements ServerRepository {
   SshConnectionConfig config;
   Object? sshError;
   int connectCalls = 0;
+  List<OrderChange> submittedOrderChanges = const [];
 
   static const _defaultConfig = SshConnectionConfig(
     hostId: 'h1',
@@ -62,6 +65,41 @@ class _FakeRepository implements ServerRepository {
   Future<List<ServerGroupModel>> fetchGroups() async {
     if (groupFetchError != null) throw groupFetchError!;
     return groups;
+  }
+
+  @override
+  Future<HostCatalog> fetchCatalog() async {
+    if (fetchError != null) throw fetchError!;
+    if (groupFetchError != null) throw groupFetchError!;
+    return HostCatalog(
+      hosts: hosts,
+      groups: groups,
+      order: OrderLayout(
+        schemaVersion: 1,
+        revision: 4,
+        sections: groups
+            .map(
+              (group) => OrderSection(
+                groupId: group.id,
+                itemIds: hosts
+                    .where((host) => host.group == group.id)
+                    .map((host) => host.id)
+                    .toList(),
+              ),
+            )
+            .toList(),
+        flatItemIds: hosts.map((host) => host.id).toList(),
+      ),
+    );
+  }
+
+  @override
+  Future<OrderLayout> updateOrder(
+    int revision,
+    List<OrderChange> changes,
+  ) async {
+    submittedOrderChanges = changes;
+    return (await fetchCatalog()).order;
   }
 
   @override
@@ -126,9 +164,8 @@ ServerModel _server({
 ServerGroupModel _group({
   String id = 'default',
   String name = 'Default group',
-  int index = 1,
 }) {
-  return ServerGroupModel.fromJson({'id': id, 'name': name, 'index': index});
+  return ServerGroupModel.fromJson({'id': id, 'name': name});
 }
 
 Widget _wrap({required ServerRepository repo}) {
@@ -150,6 +187,14 @@ Widget _wrap({required ServerRepository repo}) {
   );
 }
 
+Future<void> _revealServerActions(WidgetTester tester, String serverId) async {
+  await tester.drag(
+    find.byKey(ValueKey('server-swipe-$serverId')),
+    const Offset(-230, 0),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('shows empty-state copy when host list is empty', (tester) async {
     final repo = _FakeRepository(hosts: const []);
@@ -159,7 +204,7 @@ void main() {
     expect(find.textContaining('No servers yet'), findsOneWidget);
   });
 
-  testWidgets('renders one card per host with the right action label', (
+  testWidgets('renders compact cards without persistent action icons', (
     tester,
   ) async {
     final repo = _FakeRepository(
@@ -173,8 +218,159 @@ void main() {
 
     expect(find.byKey(const Key('server-h1')), findsOneWidget);
     expect(find.byKey(const Key('server-h2')), findsOneWidget);
-    expect(find.text('Connect'), findsOneWidget);
-    expect(find.text('Not configured'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('server-action-details-h1')).hitTestable(),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('server-action-edit-h1')).hitTestable(),
+      findsNothing,
+    );
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    expect(find.byIcon(Icons.terminal_rounded), findsNothing);
+    expect(find.byIcon(Icons.keyboard_arrow_down), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const Key('server-h1'))).height,
+      lessThan(80),
+    );
+  });
+
+  testWidgets('reveals actions, expands details, and copies the host address', (
+    tester,
+  ) async {
+    String? copiedText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedText = (call.arguments as Map<Object?, Object?>)['text']
+              ?.toString();
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final repo = _FakeRepository(
+      hosts: [_server(id: 'h1', group: 'default')],
+      groups: [_group()],
+    );
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Copy host address').hitTestable(), findsNothing);
+
+    await _revealServerActions(tester, 'h1');
+    expect(
+      find.byKey(const ValueKey('server-action-details-h1')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('server-action-edit-h1')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('server-action-delete-h1')).hitTestable(),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('server-action-details-h1')).hitTestable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Copy host address').hitTestable(), findsOneWidget);
+    expect(find.text('Default group'), findsOneWidget);
+    expect(find.text('Expiry date'), findsOneWidget);
+    expect(find.text('Console URL'), findsOneWidget);
+    expect(find.text('Login command'), findsOneWidget);
+    expect(find.text('-'), findsNWidgets(5));
+    final details = find.byKey(const ValueKey('server-details-h1'));
+    expect(
+      find.descendant(of: details, matching: find.text('Edit')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: details, matching: find.text('Delete')),
+      findsNothing,
+    );
+    await tester.tap(find.byIcon(Icons.copy_outlined).hitTestable());
+    await tester.pump();
+
+    expect(copiedText, '10.0.0.2');
+    expect(find.text('Host address copied'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('server-h1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('server-details-h1')), findsNothing);
+    expect(repo.connectCalls, 0);
+
+    repo.sshError = Exception('stop test connection');
+    await tester.tap(find.byKey(const Key('server-h1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(repo.connectCalls, 1);
+  });
+
+  testWidgets('keeps only one server action pane open', (tester) async {
+    final repo = _FakeRepository(
+      hosts: [
+        _server(id: 'h1'),
+        _server(id: 'h2'),
+      ],
+    );
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    await _revealServerActions(tester, 'h1');
+    expect(
+      find.byKey(const ValueKey('server-action-details-h1')).hitTestable(),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('server-h2')));
+    await tester.pumpAndSettle();
+    expect(repo.connectCalls, 0);
+    expect(
+      find.byKey(const ValueKey('server-action-details-h1')).hitTestable(),
+      findsNothing,
+    );
+
+    await _revealServerActions(tester, 'h1');
+    await _revealServerActions(tester, 'h2');
+    expect(
+      find.byKey(const ValueKey('server-action-details-h1')).hitTestable(),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('server-action-details-h2')).hitTestable(),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('opens delete confirmation from the swipe action', (
+    tester,
+  ) async {
+    final repo = _FakeRepository(hosts: [_server(id: 'h1')]);
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    await _revealServerActions(tester, 'h1');
+    await tester.tap(
+      find.byKey(const ValueKey('server-action-delete-h1')).hitTestable(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete server?'), findsOneWidget);
+    expect(
+      find.text('Delete "srv-h1"? This cannot be undone.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('hides group filter when only the default group exists', (
@@ -191,6 +387,107 @@ void main() {
     expect(find.byKey(const Key('server-h1')), findsOneWidget);
   });
 
+  testWidgets('enters explicit flat order mode and renders drag handles', (
+    tester,
+  ) async {
+    final repo = _FakeRepository(
+      hosts: [
+        _server(id: 'h1'),
+        _server(id: 'h2'),
+      ],
+    );
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    final normalCardHeight = tester
+        .getSize(find.byKey(const Key('server-h1')))
+        .height;
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Adjust order'));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.drag_handle), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('server-swipe-h1')), findsNothing);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
+    final orderCardHeight = tester
+        .getSize(find.byKey(const Key('server-h1')))
+        .height;
+    expect(orderCardHeight, normalCardHeight);
+    expect(orderCardHeight, lessThan(80));
+
+    final drag = await tester.startGesture(
+      tester.getCenter(find.byIcon(Icons.drag_handle).first),
+    );
+    await drag.moveBy(const Offset(0, 24));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('app-order-drag-proxy')), findsOneWidget);
+    await drag.up();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.submittedOrderChanges.single.scope, 'flat');
+    expect(repo.submittedOrderChanges.single.orderedIds, ['h1', 'h2']);
+  });
+
+  testWidgets('groups search and adjust order under the more actions menu', (
+    tester,
+  ) async {
+    final repo = _FakeRepository(hosts: [_server(id: 'h1')]);
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Search'), findsNothing);
+    expect(find.byTooltip('Adjust order'), findsNothing);
+    expect(find.byTooltip('More actions'), findsOneWidget);
+    expect(find.byTooltip('Add server'), findsOneWidget);
+    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    expect(find.byIcon(Icons.more_horiz), findsNothing);
+
+    final menu = tester.widget<PopupMenuButton<String>>(
+      find.descendant(
+        of: find.byKey(const ValueKey('server-more-menu')),
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
+    expect(menu.offset, const Offset(0, -16));
+    expect(
+      menu.popUpAnimationStyle?.duration,
+      const Duration(milliseconds: 120),
+    );
+    expect(
+      menu.popUpAnimationStyle?.reverseDuration,
+      const Duration(milliseconds: 90),
+    );
+
+    final moreX = tester.getCenter(find.byTooltip('More actions')).dx;
+    final addX = tester.getCenter(find.byTooltip('Add server')).dx;
+    expect(addX, lessThan(moreX));
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Search'), findsOneWidget);
+    expect(find.text('Adjust order'), findsOneWidget);
+    final searchMenuItem = find.ancestor(
+      of: find.text('Search'),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is PopupMenuItem<String>,
+      ),
+    );
+    final menuRect = tester.getRect(searchMenuItem);
+    final moreCenter = tester.getCenter(find.byTooltip('More actions'));
+    expect(menuRect.left, lessThan(moreCenter.dx));
+    expect(menuRect.right, greaterThan(moreCenter.dx));
+    expect(menuRect.top, greaterThan(tester.getRect(find.text('Servers')).top));
+
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('search-field')), findsOneWidget);
+  });
+
   testWidgets('shows group filters and filters cards by selected group', (
     tester,
   ) async {
@@ -201,7 +498,7 @@ void main() {
       ],
       groups: [
         _group(),
-        _group(id: 'overseas', name: 'Overseas', index: 2),
+        _group(id: 'overseas', name: 'Overseas'),
       ],
     );
     await tester.pumpWidget(_wrap(repo: repo));
@@ -235,11 +532,12 @@ void main() {
     await tester.pumpWidget(_wrap(repo: repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Connect'));
+    await tester.tap(find.byKey(const Key('server-h1')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(repo.connectCalls, 1);
+    expect(find.byKey(const ValueKey('server-details-h1')), findsNothing);
     expect(find.textContaining('Failed to get SSH config'), findsOneWidget);
   });
 
@@ -269,7 +567,7 @@ void main() {
     final initial = await container.read(groupListProvider.future);
     expect(initial, hasLength(1));
 
-    repo.groups = [_group(), _group(id: 'g2', name: 'Overseas', index: 2)];
+    repo.groups = [_group(), _group(id: 'g2', name: 'Overseas')];
     await container.read(groupListProvider.notifier).refresh();
     final refreshed = await container.read(groupListProvider.future);
     expect(refreshed, hasLength(2));

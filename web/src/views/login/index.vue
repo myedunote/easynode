@@ -57,7 +57,7 @@
             />
           </el-form-item>
           <el-form-item prop="jwtExpires" label="登录有效期">
-            <el-radio-group v-model="expireTime" class="login-indate">
+            <el-radio-group v-model="expireTime" class="management_choice_group login-indate">
               <el-radio :value="expireEnum.THREE_DAY">3天</el-radio>
               <el-radio :value="expireEnum.SEVEN_DAY">7天</el-radio>
               <el-radio :value="expireEnum.THIRTY_DAY">30天</el-radio>
@@ -215,12 +215,8 @@ onMounted(async () => {
 }
 
 .login-indate {
-  display: flex;
-  // flex-wrap: nowrap;
-
-  .input {
-    margin-left: -25px;
-    // width: auto;
-  }
+  width: 100%;
+  justify-content: flex-start;
+  column-gap: 28px;
 }
 </style>

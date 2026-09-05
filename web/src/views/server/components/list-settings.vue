@@ -1,16 +1,34 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="列表设置"
-    width="500px"
+    width="600px"
     append-to-body
+    class="management_dialog list_settings_dialog"
+    :close-on-click-modal="false"
     @close="handleClose"
   >
-    <el-tabs v-model="activeTab">
+    <template #header>
+      <div class="management_dialog_title">
+        <strong>列表设置</strong>
+      </div>
+    </template>
+    <el-tabs v-model="activeTab" class="settings_tabs">
       <!-- 表头设置 Tab -->
       <el-tab-pane label="表头设置" name="columns">
+        <div class="settings_section_heading">
+          <strong>显示字段</strong>
+          <span>选择实例列表中需要展示的信息</span>
+        </div>
         <div class="column_settings">
-          <div v-for="(item, key) in columnConfig" :key="key" class="column_item">
+          <div
+            v-for="(item, key) in columnConfig"
+            :key="key"
+            class="column_item"
+            :class="{
+              active: localColumnSettings[key],
+              disabled: item.disabled
+            }"
+          >
             <el-checkbox
               v-model="localColumnSettings[key]"
               :disabled="item.disabled"
@@ -19,11 +37,14 @@
             </el-checkbox>
           </div>
         </div>
-        <div class="tab_footer" />
       </el-tab-pane>
 
       <!-- 展现形式 Tab -->
       <el-tab-pane label="展现形式" name="display">
+        <div class="settings_section_heading">
+          <strong>列表布局</strong>
+          <span>选择按分组折叠或在单一列表中展示</span>
+        </div>
         <div class="display_settings">
           <div class="display_mode_cards">
             <div
@@ -31,6 +52,7 @@
               :class="{ active: localDisplayMode === 'group' }"
               @click="localDisplayMode = 'group'"
             >
+              <span class="card_icon"><el-icon><Collection /></el-icon></span>
               <div class="card_content">
                 <div class="card_title">分组展示</div>
                 <div class="card_description">按照分组折叠展示主机列表</div>
@@ -47,6 +69,7 @@
               :class="{ active: localDisplayMode === 'list' }"
               @click="localDisplayMode = 'list'"
             >
+              <span class="card_icon"><el-icon><Tickets /></el-icon></span>
               <div class="card_content">
                 <div class="card_title">列表展示</div>
                 <div class="card_description">在一个列表中展示所有主机</div>
@@ -63,9 +86,9 @@
     </el-tabs>
 
     <template #footer>
-      <div class="dialog_footer">
+      <div class="management_dialog_actions">
         <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" @click="handleConfirm">确定</el-button>
+        <el-button type="primary" @click="handleConfirm">保存设置</el-button>
       </div>
     </template>
   </el-dialog>
@@ -73,7 +96,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { CircleCheckFilled } from '@element-plus/icons-vue'
+import { CircleCheckFilled, Collection, Tickets } from '@element-plus/icons-vue'
 
 const props = defineProps({
   show: {
@@ -139,29 +162,100 @@ const handleConfirm = () => {
 </script>
 
 <style lang="scss" scoped>
-.column_settings {
-  padding: 10px 0;
-  max-height: 400px;
-  overflow-y: auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 20px;
+.settings_tabs {
+  :deep(.el-tabs__header) {
+    margin: 0 0 20px;
+    padding: 4px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 9px;
+    background: var(--el-fill-color-light);
+  }
 
-  .column_item {
-    flex: 0 0 auto;
-    min-width: fit-content;
+  :deep(.el-tabs__nav-wrap::after),
+  :deep(.el-tabs__active-bar) {
+    display: none;
+  }
+
+  :deep(.el-tabs__nav) {
+    width: 100%;
+    border: 0;
+  }
+
+  :deep(.el-tabs__item) {
+    width: 50%;
+    height: 38px;
+    justify-content: center;
+    color: var(--el-text-color-secondary);
+    border-radius: 7px;
+    transition: color .18s ease, background-color .18s ease, box-shadow .18s ease;
+  }
+
+  :deep(.el-tabs__item:not(.is-active):hover) {
+    color: var(--el-text-color-regular);
+    background: var(--el-fill-color);
+  }
+
+  :deep(.el-tabs__item.is-active) {
+    color: var(--el-color-primary);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--el-color-primary) 14%, var(--el-bg-color-overlay));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--el-color-primary) 38%, transparent),
+      0 1px 3px rgb(0 0 0 / 14%);
   }
 }
 
-.tab_footer {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--el-border-color-lighter);
+.settings_section_heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+
+  strong {
+    color: var(--el-text-color-primary);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  span {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+}
+
+.column_settings {
+  max-height: 400px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  .column_item {
+    min-width: 0;
+    padding: 11px 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: var(--el-fill-color-extra-light);
+    transition: border-color .18s ease, background-color .18s ease;
+
+    &.active {
+      border-color: var(--el-color-primary-light-7);
+      background: var(--el-color-primary-light-9);
+    }
+
+    &.disabled {
+      opacity: .72;
+    }
+
+    :deep(.el-checkbox) {
+      width: 100%;
+      height: auto;
+      margin-right: 0;
+    }
+  }
 }
 
 .display_settings {
-  padding: 20px 0;
-
   .display_mode_cards {
     display: flex;
     flex-direction: column;
@@ -170,11 +264,14 @@ const handleConfirm = () => {
     .display_mode_card {
       display: flex;
       align-items: center;
-      padding: 16px 20px;
-      border: 2px solid var(--el-border-color);
-      border-radius: 6px;
-      background-color: var(--el-fill-color-blank);
+      gap: 13px;
+      min-height: 74px;
+      padding: 14px 16px;
+      border: 1px solid var(--el-border-color-lighter);
+      border-radius: 10px;
+      background: var(--el-fill-color-extra-light);
       cursor: pointer;
+      transition: border-color .18s ease, background-color .18s ease;
 
       &:hover {
         border-color: var(--el-color-primary-light-5);
@@ -182,7 +279,7 @@ const handleConfirm = () => {
 
       &.active {
         border-color: var(--el-color-primary);
-        background-color: var(--el-color-primary-light-9);
+        background: var(--el-color-primary-light-9);
 
         .card_icon {
           color: var(--el-color-primary);
@@ -194,12 +291,17 @@ const handleConfirm = () => {
       }
 
       .card_icon {
+        width: 40px;
+        height: 40px;
         flex-shrink: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-right: 16px;
         color: var(--el-text-color-secondary);
+        font-size: 19px;
+        background: var(--el-bg-color);
+        border: 1px solid var(--el-border-color-lighter);
+        border-radius: 9px;
       }
 
       .card_content {
@@ -207,7 +309,7 @@ const handleConfirm = () => {
 
         .card_title {
           font-size: 15px;
-          font-weight: 500;
+          font-weight: 600;
           color: var(--el-text-color-primary);
           margin-bottom: 4px;
         }
@@ -231,10 +333,13 @@ const handleConfirm = () => {
   }
 }
 
-.dialog_footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
+@media (max-width: 520px) {
+  .column_settings {
+    grid-template-columns: 1fr;
+  }
+
+  .display_settings .display_mode_cards .display_mode_card {
+    padding: 13px;
+  }
 }
 </style>
-

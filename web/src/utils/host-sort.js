@@ -20,3 +20,18 @@ export const compareHostNames = (left, right) => {
   if (result !== 0) return result
   return compareIds(left?.id, right?.id)
 }
+
+const normalizeSearchField = value => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') return value.name ?? value.label ?? value.value ?? ''
+  return String(value)
+}
+
+export const matchesHostSearch = (host, searchValue) => {
+  const keyword = normalizeSearchField(searchValue).trim().toLocaleLowerCase()
+  if (!keyword) return true
+
+  const tags = Array.isArray(host?.tag) ? host.tag : [host?.tag,]
+  return [host?.name, host?.username, host?.host, ...tags,]
+    .some(value => normalizeSearchField(value).toLocaleLowerCase().includes(keyword))
+}

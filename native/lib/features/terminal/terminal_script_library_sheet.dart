@@ -80,16 +80,10 @@ class _TerminalScriptLibrarySheetState
                     child: TextField(
                       controller: _searchCtrl,
                       cursorColor: c.primary,
-                      style: TextStyle(
-                        color: c.text,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: c.text, fontSize: 14),
                       decoration: InputDecoration(
                         hintText: l.tr('scripts.searchHint'),
-                        hintStyle: TextStyle(
-                          color: c.softMuted,
-                          fontSize: 13,
-                        ),
+                        hintStyle: TextStyle(color: c.softMuted, fontSize: 13),
                         prefixIcon: const Icon(Icons.search, size: 18),
                         isDense: true,
                         filled: true,
@@ -100,22 +94,15 @@ class _TerminalScriptLibrarySheetState
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(
-                            color: c.border,
-                          ),
+                          borderSide: BorderSide(color: c.border),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(
-                            color: c.border,
-                          ),
+                          borderSide: BorderSide(color: c.border),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(
-                            color: c.primary,
-                            width: 1.2,
-                          ),
+                          borderSide: BorderSide(color: c.primary, width: 1.2),
                         ),
                       ),
                       onChanged: (value) =>
@@ -446,11 +433,7 @@ class _ScriptActionCard extends StatelessWidget {
                   script.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: c.muted,
-                    fontSize: 12,
-                    height: 1.4,
-                  ),
+                  style: TextStyle(color: c.muted, fontSize: 12, height: 1.4),
                 ),
               ],
               const SizedBox(height: 10),
@@ -458,21 +441,14 @@ class _ScriptActionCard extends StatelessWidget {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Icon(
-                    Icons.folder_outlined,
-                    size: 13,
-                    color: c.softMuted,
-                  ),
+                  Icon(Icons.folder_outlined, size: 13, color: c.softMuted),
                   const SizedBox(width: 5),
                   Expanded(
                     child: Text(
                       groupName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: c.softMuted,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: c.softMuted, fontSize: 12),
                     ),
                   ),
                   _ScriptIconAction(
@@ -598,7 +574,6 @@ class _TerminalScriptEditSheetState
         name: _nameCtrl.text.trim(),
         description: _descriptionCtrl.text.trim(),
         command: _commandCtrl.text,
-        index: widget.script.index ?? 0,
         group: widget.script.group,
         useBase64: _useBase64,
       );
@@ -820,10 +795,7 @@ class _SheetFrame extends StatelessWidget {
                 IconButton(
                   tooltip: AppLocalizations.of(context).tr('common.close'),
                   onPressed: onClose,
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: c.muted,
-                  ),
+                  icon: Icon(Icons.close_rounded, color: c.muted),
                 ),
               ],
             ),

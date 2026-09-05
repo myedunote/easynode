@@ -13,7 +13,6 @@ class ServerFormData {
     this.password = '',
     this.privateKey = '',
     this.credential = '',
-    this.index = 0,
     this.expired,
     this.expiredNotify = false,
     this.consoleUrl = '',
@@ -35,7 +34,6 @@ class ServerFormData {
   String password;
   String privateKey;
   String credential;
-  int index;
   DateTime? expired;
   bool expiredNotify;
   String consoleUrl;
@@ -49,9 +47,7 @@ class ServerFormData {
   bool get isRdp => connectType == 'rdp';
   bool get isSsh => connectType == 'ssh';
 
-  factory ServerFormData.add({required int nextIndex}) {
-    return ServerFormData(index: nextIndex);
-  }
+  factory ServerFormData.add() => ServerFormData();
 
   factory ServerFormData.edit(ServerModel server) {
     return ServerFormData(
@@ -64,7 +60,6 @@ class ServerFormData {
       username: server.username,
       authType: server.authType.isEmpty ? 'privateKey' : server.authType,
       credential: server.credential ?? '',
-      index: server.index,
       proxyType: server.proxyType,
       jumpHosts: server.jumpHosts,
       proxyServer: server.proxyServer,
@@ -89,7 +84,6 @@ class ServerFormData {
       'password': password,
       'privateKey': privateKey,
       'credential': credential,
-      'index': index,
       'expired': expired?.millisecondsSinceEpoch,
       'expiredNotify': expiredNotify,
       'consoleUrl': consoleUrl.trim(),

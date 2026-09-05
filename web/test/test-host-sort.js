@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { compareHostNames } from '../src/utils/host-sort.js'
+import { compareHostNames, matchesHostSearch } from '../src/utils/host-sort.js'
 
 const sortHosts = (hosts) => [...hosts,].sort(compareHostNames)
 const sortedNames = (hosts) => sortHosts(hosts).map(({ name }) => name)
@@ -12,6 +12,21 @@ assert.deepEqual(
   ]),
   ['t1', 't2', 't10',]
 )
+
+const searchableHost = {
+  name: 'Production-01',
+  username: 'Deploy',
+  host: '10.0.0.8',
+  tag: ['Asia', { name: 'Primary' },]
+}
+
+assert.equal(matchesHostSearch(searchableHost, ' production '), true)
+assert.equal(matchesHostSearch(searchableHost, 'DEPLOY'), true)
+assert.equal(matchesHostSearch(searchableHost, '0.0.8'), true)
+assert.equal(matchesHostSearch(searchableHost, 'primary'), true)
+assert.equal(matchesHostSearch(searchableHost, ''), true)
+assert.equal(matchesHostSearch(searchableHost, 'missing'), false)
+assert.doesNotThrow(() => matchesHostSearch({ tag: [null, 12, {},] }, '12'))
 
 assert.deepEqual(
   sortedNames([

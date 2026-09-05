@@ -18,7 +18,7 @@ import 'package:easynode_native/state/api_providers.dart';
 import 'package:easynode_native/state/plus_info_notifier.dart';
 import 'package:easynode_native/state/proxy_list_notifier.dart';
 
-class _FakeRepository implements ServerRepository {
+class _FakeRepository extends ServerRepository {
   int createCalls = 0;
 
   @override

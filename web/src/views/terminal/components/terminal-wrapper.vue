@@ -794,7 +794,6 @@ const getSplitContainerClass = (tabKey) => {
 const isPlusActive = computed(() => $store.isPlusActive)
 const terminalTabs = computed(() => props.terminalTabs)
 const terminalTabsLen = computed(() => props.terminalTabs.length)
-const hostGroupList = computed(() => $store.groupList)
 const hostList = computed(() => {
   if (!Array.isArray($store.hostList)) return []
   return $store.hostList.filter(item => item.connectType !== 'rdp')
@@ -812,16 +811,10 @@ const scriptLibraryCascader = computed(
 )
 const hostGroupCascader = computed(() => $store.menuSetting.hostGroupCascader)
 const formatHostGroupList = computed(() => {
-  const groupList = hostList.value.reduce((acc, item) => {
-    const groupName = hostGroupList.value.find((group) => group.id === item.group)?.name
-    if (!acc[groupName]) {
-      acc[groupName] = []
-    }
-    acc[groupName].push(item)
-    return acc
-  }, {})
-  const result = Object.entries(groupList)
-    .map(([groupName, hosts,]) => {
+  const sshIds = new Set(hostList.value.map(({ id }) => id))
+  return $store.orderedHostSections
+    .map(({ group, hosts: orderedHosts }) => {
+      const hosts = orderedHosts.filter(host => sshIds.has(host.id))
       const children = hosts.map((host) => ({
         value: host.id,
         label: host.name
@@ -833,12 +826,12 @@ const formatHostGroupList = computed(() => {
         })
       }
       return {
-        value: groupName,
-        label: groupName,
+        value: group.id,
+        label: group.name,
         children
       }
     })
-  return result
+    .filter(group => group.children.length)
 })
 const formatScriptList = computed(() => {
   const scriptsByGroup = scriptList.value.reduce((acc, script) => {
@@ -868,7 +861,7 @@ const getStatusColor = (status) => {
 
 const handleUpdateList = async ({ host }) => {
   try {
-    await $store.getHostList()
+    await $store.getHostCatalog()
     let targetHost = hostList.value.find((item) => item.host === host)
     if (targetHost) emit('add-host', targetHost)
   } catch (err) {

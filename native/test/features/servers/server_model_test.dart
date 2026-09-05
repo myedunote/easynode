@@ -4,7 +4,7 @@ import 'package:easynode_native/features/servers/server_model.dart';
 
 void main() {
   test('new server form defaults to password auth and no proxy', () {
-    final form = ServerFormData.add(nextIndex: 3);
+    final form = ServerFormData.add();
 
     expect(form.authType, 'password');
     expect(form.proxyType, '');

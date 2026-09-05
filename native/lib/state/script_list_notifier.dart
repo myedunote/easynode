@@ -2,8 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/scripts/script_model.dart';
 import 'api_providers.dart';
+import 'order_notifiers.dart';
 
-/// Mirrors web's `store.scriptList` + `store.getScriptList()`. The list is
+/// Exposes the script projection from the shared script catalog. The list is
 /// fetched on first read and exposed as an [AsyncValue]; consumers across
 /// the app (scripts tab, terminal quick-actions, etc.) share the same
 /// snapshot — refresh once, every screen sees it.
@@ -11,7 +12,9 @@ class ScriptListNotifier extends AsyncNotifier<List<ScriptModel>> {
   @override
   Future<List<ScriptModel>> build() async {
     final repo = ref.watch(scriptRepositoryProvider);
-    return repo.fetchScripts();
+    final catalog = await repo.fetchCatalog();
+    ref.read(scriptOrderProvider.notifier).setLayout(catalog.order);
+    return catalog.scripts;
   }
 
   Future<void> refresh({bool throwOnError = false}) async {
@@ -20,8 +23,9 @@ class ScriptListNotifier extends AsyncNotifier<List<ScriptModel>> {
       state = const AsyncLoading();
     }
     try {
-      final scripts = await ref.read(scriptRepositoryProvider).fetchScripts();
-      state = AsyncData(scripts);
+      final catalog = await ref.read(scriptRepositoryProvider).fetchCatalog();
+      ref.read(scriptOrderProvider.notifier).setLayout(catalog.order);
+      state = AsyncData(catalog.scripts);
     } catch (error, stackTrace) {
       state = previous == null
           ? AsyncError(error, stackTrace)

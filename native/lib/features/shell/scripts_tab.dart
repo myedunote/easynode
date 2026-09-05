@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/ui/app_overflow_menu.dart';
+import '../../core/ui/app_reorder_proxy.dart';
 import '../../core/ui/refresh_feedback.dart';
+import '../../core/api/api_result.dart';
+import '../../features/order/order_layout.dart';
 import '../../features/scripts/script_form_page.dart';
 import '../../features/scripts/script_group_model.dart';
 import '../../features/scripts/script_groups_page.dart';
@@ -37,6 +41,10 @@ class _ScriptsTabState extends ConsumerState<ScriptsTab> {
   String? _selectedGroupId;
   String _query = '';
   bool _searchVisible = false;
+  bool _orderMode = false;
+  bool _orderSaving = false;
+  int _orderRevision = 0;
+  List<String> _orderDraft = const [];
 
   @override
   void dispose() {
@@ -45,13 +53,12 @@ class _ScriptsTabState extends ConsumerState<ScriptsTab> {
   }
 
   Future<void> _refresh() async {
+    if (_orderMode) return;
     await runRefreshWithFeedback(
       context,
       () => Future.wait([
         ref.read(scriptListProvider.notifier).refresh(throwOnError: true),
-        ref
-            .read(scriptGroupListProvider.notifier)
-            .refresh(throwOnError: true),
+        ref.read(scriptGroupListProvider.notifier).refresh(throwOnError: true),
       ]),
     );
   }
@@ -131,6 +138,7 @@ class _ScriptsTabState extends ConsumerState<ScriptsTab> {
   }
 
   void _toggleSearch() {
+    if (_orderMode) return;
     setState(() {
       _searchVisible = !_searchVisible;
       if (!_searchVisible) {
@@ -190,33 +198,68 @@ class _ScriptsTabState extends ConsumerState<ScriptsTab> {
       },
       data: (scripts) {
         final groups = groupsAsync.valueOrNull ?? const <ScriptGroupModel>[];
-        final searched = _searched(scripts);
+        final searched = _orderMode ? scripts : _searched(scripts);
         final effectiveGroupId = _effectiveGroupId(groups);
-        final filtered = _filterByGroup(searched, effectiveGroupId);
+        final filtered = _orderMode
+            ? _orderedDraftScripts(scripts)
+            : _filterByGroup(searched, effectiveGroupId);
         return Column(
           children: [
             TabHeader(
               title: l.tr('tabs.scripts'),
               actions: [
-                _HeaderIconButton(
-                  tooltip: _searchVisible
-                      ? l.tr('common.closeSearch')
-                      : l.tr('common.search'),
-                  icon: _searchVisible ? Icons.close : Icons.search,
-                  onPressed: _toggleSearch,
-                ),
-                const SizedBox(width: 4),
-                _HeaderIconButton(
-                  tooltip: l.tr('scripts.groupsManage'),
-                  icon: Icons.account_tree_outlined,
-                  onPressed: _openGroups,
-                ),
-                const SizedBox(width: 4),
-                _HeaderIconButton(
-                  tooltip: l.tr('scripts.addScript'),
-                  icon: Icons.add,
-                  onPressed: () => _openForm(),
-                ),
+                if (_orderMode) ...[
+                  TextButton(
+                    onPressed: _orderSaving ? null : _cancelOrder,
+                    child: Text(l.tr('common.cancel')),
+                  ),
+                  FilledButton(
+                    onPressed: _orderSaving ? null : _saveOrder,
+                    child: Text(l.tr('common.save')),
+                  ),
+                ] else ...[
+                  _HeaderIconButton(
+                    tooltip: l.tr('scripts.addScript'),
+                    icon: Icons.add,
+                    onPressed: () => _openForm(),
+                  ),
+                  const SizedBox(width: 4),
+                  AppOverflowMenu<String>(
+                    key: const ValueKey('script-more-menu'),
+                    tooltip: l.tr('common.moreActions'),
+                    items: [
+                      AppOverflowMenuItem(
+                        value: 'search',
+                        icon: _searchVisible ? Icons.close : Icons.search,
+                        label: _searchVisible
+                            ? l.tr('common.closeSearch')
+                            : l.tr('common.search'),
+                      ),
+                      AppOverflowMenuItem(
+                        value: 'groups',
+                        icon: Icons.account_tree_outlined,
+                        label: l.tr('scripts.groupsManage'),
+                      ),
+                      AppOverflowMenuItem(
+                        value: 'order',
+                        icon: Icons.swap_vert,
+                        label: l.tr('common.adjustOrder'),
+                        enabled:
+                            effectiveGroupId != null &&
+                            effectiveGroupId != 'builtin',
+                      ),
+                    ],
+                    onSelected: (action) {
+                      if (action == 'search') {
+                        _toggleSearch();
+                      } else if (action == 'groups') {
+                        _openGroups();
+                      } else if (action == 'order') {
+                        _startOrder();
+                      }
+                    },
+                  ),
+                ],
               ],
             ),
             Padding(
@@ -224,85 +267,185 @@ class _ScriptsTabState extends ConsumerState<ScriptsTab> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeInOut,
-                    alignment: Alignment.topCenter,
-                    child: AnimatedSwitcher(
+                  if (!_orderMode)
+                    AnimatedSize(
                       duration: const Duration(milliseconds: 220),
-                      transitionBuilder: (child, anim) =>
-                          FadeTransition(opacity: anim, child: child),
-                      child: _searchVisible
-                          ? Padding(
-                              key: const ValueKey('search'),
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: SizedBox(
-                                height: 44,
-                                child: TextField(
-                                  controller: _searchCtrl,
-                                  autofocus: true,
-                                  cursorColor: context.colors.primary,
-                                  style: TextStyle(
-                                    color: context.colors.text,
-                                    fontSize: 14,
-                                  ),
-                                  decoration: _searchFieldDecoration(context, l)
-                                      .copyWith(
-                                        hintText: l.tr('scripts.searchHint'),
-                                      ),
-                                  onChanged: (v) => setState(
-                                    () => _query = v.trim().toLowerCase(),
+                      curve: Curves.easeInOut,
+                      alignment: Alignment.topCenter,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        transitionBuilder: (child, anim) =>
+                            FadeTransition(opacity: anim, child: child),
+                        child: _searchVisible
+                            ? Padding(
+                                key: const ValueKey('search'),
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: SizedBox(
+                                  height: 44,
+                                  child: TextField(
+                                    controller: _searchCtrl,
+                                    autofocus: true,
+                                    cursorColor: context.colors.primary,
+                                    style: TextStyle(
+                                      color: context.colors.text,
+                                      fontSize: 14,
+                                    ),
+                                    decoration:
+                                        _searchFieldDecoration(
+                                          context,
+                                          l,
+                                        ).copyWith(
+                                          hintText: l.tr('scripts.searchHint'),
+                                        ),
+                                    onChanged: (v) => setState(
+                                      () => _query = v.trim().toLowerCase(),
+                                    ),
                                   ),
                                 ),
+                              )
+                            : const SizedBox(
+                                key: ValueKey('search-empty'),
+                                width: double.infinity,
                               ),
-                            )
-                          : const SizedBox(
-                              key: ValueKey('search-empty'),
-                              width: double.infinity,
-                            ),
+                      ),
                     ),
-                  ),
                   _GroupChips(
                     groups: groups,
                     scripts: searched,
                     selectedGroupId: effectiveGroupId,
-                    onSelected: (id) => setState(() => _selectedGroupId = id),
+                    onSelected: (id) {
+                      if (!_orderMode) setState(() => _selectedGroupId = id);
+                    },
                   ),
                 ],
               ),
             ),
             Expanded(
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
-                children: [
-                  if (scripts.isEmpty)
-                    _MessageState(message: l.tr('scripts.emptyHint'))
-                  else if (filtered.isEmpty)
-                    _MessageState(message: l.tr('scripts.emptyFiltered'))
-                  else
-                    for (var i = 0; i < filtered.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ScriptCard(
-                          script: filtered[i],
-                          groupName: _groupName(filtered[i], groups),
-                          onCopy: () => _copyCommand(filtered[i]),
-                          onEdit: filtered[i].isBuiltin
-                              ? null
-                              : () => _openForm(script: filtered[i]),
-                          onDelete: filtered[i].isBuiltin
-                              ? null
-                              : () => _confirmDelete(filtered[i]),
-                        ),
-                      ),
-                ],
-              ),
+              child: _orderMode
+                  ? ReorderableListView.builder(
+                      buildDefaultDragHandles: false,
+                      proxyDecorator: buildAppReorderProxy,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+                      itemCount: filtered.length,
+                      onReorderItem: _reorder,
+                      itemBuilder: (context, index) {
+                        final script = filtered[index];
+                        return _ScriptOrderCard(
+                          key: ValueKey('order-${script.id}'),
+                          script: script,
+                          orderIndex: index,
+                        );
+                      },
+                    )
+                  : ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+                      children: [
+                        if (scripts.isEmpty)
+                          _MessageState(message: l.tr('scripts.emptyHint'))
+                        else if (filtered.isEmpty)
+                          _MessageState(message: l.tr('scripts.emptyFiltered'))
+                        else
+                          for (var i = 0; i < filtered.length; i++)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _ScriptCard(
+                                script: filtered[i],
+                                groupName: _groupName(filtered[i], groups),
+                                onCopy: () => _copyCommand(filtered[i]),
+                                onEdit: filtered[i].isBuiltin
+                                    ? null
+                                    : () => _openForm(script: filtered[i]),
+                                onDelete: filtered[i].isBuiltin
+                                    ? null
+                                    : () => _confirmDelete(filtered[i]),
+                              ),
+                            ),
+                      ],
+                    ),
             ),
           ],
         );
       },
     );
+  }
+
+  List<ScriptModel> _orderedDraftScripts(List<ScriptModel> scripts) {
+    final byId = {for (final script in scripts) script.id: script};
+    return _orderDraft.map((id) => byId[id]).whereType<ScriptModel>().toList();
+  }
+
+  Future<void> _startOrder() async {
+    final groupId = _selectedGroupId;
+    if (groupId == null || groupId == 'builtin') return;
+    final catalog = await ref.read(scriptRepositoryProvider).fetchCatalog();
+    final section = catalog.order.sections.where(
+      (item) => item.groupId == groupId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _searchVisible = false;
+      _searchCtrl.clear();
+      _query = '';
+      _orderRevision = catalog.order.revision;
+      _orderDraft = section.isEmpty ? const [] : [...section.first.itemIds];
+      _orderMode = true;
+    });
+  }
+
+  void _cancelOrder() => setState(() {
+    _orderMode = false;
+    _orderDraft = const [];
+  });
+
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      final draft = [..._orderDraft];
+      final id = draft.removeAt(oldIndex);
+      draft.insert(newIndex, id);
+      _orderDraft = draft;
+    });
+  }
+
+  Future<void> _saveOrder() async {
+    final groupId = _selectedGroupId;
+    if (groupId == null || groupId == 'builtin') return;
+    setState(() => _orderSaving = true);
+    try {
+      await ref.read(scriptRepositoryProvider).updateOrder(_orderRevision, [
+        OrderChange(
+          scope: 'groupItems',
+          groupId: groupId,
+          orderedIds: _orderDraft,
+        ),
+      ]);
+      await Future.wait([
+        ref.read(scriptListProvider.notifier).refresh(),
+        ref.read(scriptGroupListProvider.notifier).refresh(),
+      ]);
+      if (mounted) _cancelOrder();
+    } catch (error) {
+      if (!mounted) return;
+      _cancelOrder();
+      if (error is ApiFailure && error.statusCode == 409) {
+        await Future.wait([
+          ref.read(scriptListProvider.notifier).refresh(),
+          ref.read(scriptGroupListProvider.notifier).refresh(),
+        ]);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).tr('order.conflict')),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _orderSaving = false);
+    }
   }
 
   List<ScriptModel> _searched(List<ScriptModel> scripts) {
@@ -413,9 +556,7 @@ class _Chip extends StatelessWidget {
       color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: selected
-            ? BorderSide.none
-            : BorderSide(color: c.strongBorder),
+        side: selected ? BorderSide.none : BorderSide(color: c.strongBorder),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
@@ -511,11 +652,7 @@ class _ScriptCard extends StatelessWidget {
               script.description,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: c.muted,
-                fontSize: 12,
-                height: 1.4,
-              ),
+              style: TextStyle(color: c.muted, fontSize: 12, height: 1.4),
             ),
           ],
           const SizedBox(height: 10),
@@ -523,21 +660,14 @@ class _ScriptCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Icon(
-                Icons.folder_outlined,
-                size: 13,
-                color: c.softMuted,
-              ),
+              Icon(Icons.folder_outlined, size: 13, color: c.softMuted),
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
                   groupName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: c.softMuted,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: c.softMuted, fontSize: 12),
                 ),
               ),
               const SizedBox(width: 8),
@@ -566,6 +696,107 @@ class _ScriptCard extends StatelessWidget {
                   onTap: onDelete,
                 ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScriptOrderCard extends StatelessWidget {
+  const _ScriptOrderCard({
+    super.key,
+    required this.script,
+    required this.orderIndex,
+  });
+
+  final ScriptModel script;
+  final int orderIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final firstLine = script.command.split('\n').first.trim();
+    return Container(
+      key: Key('script-${script.id}'),
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.border),
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 9, 58, 9),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: c.banner,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(
+                    Icons.terminal_rounded,
+                    color: c.primary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        script.name.isEmpty ? '--' : script.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.text,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        firstLine.isEmpty ? '--' : firstLine,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.softMuted,
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 8,
+            bottom: 0,
+            child: Center(
+              child: ReorderableDragStartListener(
+                index: orderIndex,
+                child: Container(
+                  width: 40,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: c.canvas,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.drag_handle, color: c.muted, size: 22),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -722,7 +953,7 @@ class _HeaderIconButton extends StatelessWidget {
 
   final String tooltip;
   final IconData icon;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -734,7 +965,13 @@ class _HeaderIconButton extends StatelessWidget {
         child: SizedBox(
           width: 36,
           height: 36,
-          child: Icon(icon, color: context.colors.muted, size: 22),
+          child: Icon(
+            icon,
+            color: onPressed == null
+                ? context.colors.softMuted
+                : context.colors.muted,
+            size: 22,
+          ),
         ),
       ),
     );
@@ -760,7 +997,10 @@ class _MessageState extends StatelessWidget {
   }
 }
 
-InputDecoration _searchFieldDecoration(BuildContext context, AppLocalizations l) {
+InputDecoration _searchFieldDecoration(
+  BuildContext context,
+  AppLocalizations l,
+) {
   final c = context.colors;
   return InputDecoration(
     isDense: true,

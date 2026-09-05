@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import path, { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HostListDB, GroupDB, ScriptGroupDB } from '../../utils/db-class.js'
-import { getScriptById, listScripts } from '../../script-library.js'
+import { getScriptById, listScripts } from '../../services/script-library.js'
 import { execCommand, withSftp, DEFAULT_TIMEOUT_MS } from '../ssh.js'
 import { fit, read as readOutput } from '../output-store.js'
 import { writeAudit, ACTION } from '../audit.js'
@@ -22,6 +22,7 @@ import { classifyReadPath, DataRisk, stricterDataRisk } from '../data-policy.js'
 import { Effect } from '../policy.js'
 import decryptAndExecuteAsync from '../../utils/decrypt-file.js'
 import { RuntimeState } from '../../utils/runtime-state.js'
+import { getLayout, ORDER_DOMAIN, orderByIds } from '../../services/order-service.js'
 
 const hostListDB = new HostListDB().getInstance()
 const groupDB = new GroupDB().getInstance()
@@ -130,14 +131,15 @@ export async function hostList(ctx, input) {
   const allowedHostIds = ctx.allowedHostIds instanceof Set ? [...ctx.allowedHostIds] : []
   if (!allowedHostIds.length) return ok({ total: 0, hosts: [] })
 
-  const [hosts, groups] = await Promise.all([
+  const [hosts, groups, order] = await Promise.all([
     hostListDB.findAsync({ _id: { $in: allowedHostIds } }),
-    groupDB.findAsync({})
+    groupDB.findAsync({}),
+    getLayout(ORDER_DOMAIN.HOSTS)
   ])
   const groupName = new Map(groups.map((group) => [group._id, group.name]))
 
   const keyword = (input.keyword || '').trim().toLowerCase()
-  const items = hosts
+  const items = orderByIds(hosts, order.flatItemIds)
     .filter((host) => {
       if (!keyword) return true
       const group = groupName.get(host.group) || ''

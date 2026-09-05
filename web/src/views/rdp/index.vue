@@ -144,7 +144,7 @@ const addRDP = (item) => {
 
 const handleUpdateList = async ({ host }) => {
   try {
-    await $store.getHostList()
+    await $store.getHostCatalog()
     let targetHost = hostList.value.find((item) => item.host === host)
     if (targetHost) addRDP(targetHost)
   } catch (err) {

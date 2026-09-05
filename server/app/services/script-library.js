@@ -5,9 +5,10 @@
  * 或对 id / 分组的转换规则。这里仅负责读取；执行权限仍由各调用方控制。
  */
 
-import { randomStr } from './utils/tools.js'
-import { ScriptsDB } from './utils/db-class.js'
-import localShellJson from './config/shell.json' with { type: 'json' }
+import { randomStr } from '../utils/tools.js'
+import { ScriptsDB } from '../utils/db-class.js'
+import { getLayout, ORDER_DOMAIN, orderByIds } from './order-service.js'
+import localShellJson from '../config/shell.json' with { type: 'json' }
 
 const scriptsDB = new ScriptsDB().getInstance()
 
@@ -15,7 +16,6 @@ const scriptsDB = new ScriptsDB().getInstance()
 const builtinScripts = JSON.parse(JSON.stringify(localShellJson)).map((item) => ({
   ...item,
   id: randomStr(10),
-  index: '--',
   description: item.description,
   group: 'builtin',
   builtin: true
@@ -32,8 +32,9 @@ function normalizeStoredScript(item) {
 
 export async function listScripts() {
   const scripts = (await scriptsDB.findAsync({})).map(normalizeStoredScript)
-  scripts.sort((a, b) => Number(b.index || 0) - Number(a.index || 0))
-  return [...scripts, ...builtinScripts]
+  const order = await getLayout(ORDER_DOMAIN.SCRIPTS)
+  const ordered = order.sections.flatMap(section => orderByIds(scripts, section.itemIds))
+  return [...ordered, ...builtinScripts]
 }
 
 export function listBuiltinScripts() {

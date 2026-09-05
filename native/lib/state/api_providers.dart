@@ -17,7 +17,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return api;
 });
 
-/// Repository for `/host-list` and `/native/ssh-connection`. Depends on the
+/// Repository for `/host-catalog` and `/native/ssh-connection`. Depends on the
 /// active ApiClient and the public key fetched at login time, both of
 /// which are derived from [authProvider].
 final serverRepositoryProvider = Provider<ServerRepository>((ref) {
@@ -30,7 +30,7 @@ final serverRepositoryProvider = Provider<ServerRepository>((ref) {
   return ApiServerRepository(apiClient: api, publicKeyPem: pubKey);
 });
 
-/// Repository for `/script` and `/script-group`. Only needs the ApiClient
+/// Repository for `/script-catalog` and script CRUD. Only needs the ApiClient
 /// — scripts don't go through the RSA/AES envelope SSH connections use.
 final scriptRepositoryProvider = Provider<ScriptRepository>((ref) {
   final api = ref.watch(authProvider).apiClient;

@@ -2,6 +2,7 @@ import NodeRSA from 'node-rsa'
 import { randomStr } from './utils/tools.js'
 import { AESEncryptAsync, SHA1Encrypt } from './utils/encrypt.js'
 import { KeyDB, GroupDB, NotifyDB, NotifyConfigDB, ScriptGroupDB } from './utils/db-class.js'
+import { initializeOrderSystem } from './services/order-service.js'
 import {
   IP_ACCESS_RULE_VERSION,
   normalizeStoredIpRules,
@@ -83,11 +84,10 @@ async function initKeyDB() {
 
 async function initGroupDB() {
   const groupDB = new GroupDB().getInstance()
-  let count = await groupDB.countAsync({})
-  if (count === 0) {
+  const defaultGroup = await groupDB.findOneAsync({ _id: 'default' })
+  if (!defaultGroup) {
     logger.info('初始化groupDB✔')
-    const defaultData = [{ '_id': 'default', 'name': '默认分组', 'index': 0 }]
-    return groupDB.insertAsync(defaultData)
+    return groupDB.insertAsync({ '_id': 'default', 'name': '默认分组' })
   }
   return Promise.resolve()
 }
@@ -166,14 +166,16 @@ async function initNotifyConfigDB() {
 
 async function initScriptGroupDB() {
   const scriptGroupDB = new ScriptGroupDB().getInstance()
-  let count = await scriptGroupDB.countAsync({})
-  if (count === 0) {
+  const [defaultGroup, builtinGroup] = await Promise.all([
+    scriptGroupDB.findOneAsync({ _id: 'default' }),
+    scriptGroupDB.findOneAsync({ _id: 'builtin' })
+  ])
+  const missing = []
+  if (!defaultGroup) missing.push({ '_id': 'default', 'name': '默认分组' })
+  if (!builtinGroup) missing.push({ '_id': 'builtin', 'name': '内置脚本' })
+  if (missing.length) {
     logger.info('初始化ScriptGroupDB✔')
-    const defaultData = [
-      { '_id': 'default', 'name': '默认分组', 'index': 0 },
-      { '_id': 'builtin', 'name': '内置脚本', 'index': -1 }
-    ]
-    return scriptGroupDB.insertAsync(defaultData)
+    return scriptGroupDB.insertAsync(missing)
   }
   return Promise.resolve()
 }
@@ -184,4 +186,5 @@ export default async () => {
   await initGroupDB()
   await initScriptGroupDB()
   await initNotifyConfigDB()
+  await initializeOrderSystem()
 }
