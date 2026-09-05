@@ -1,6 +1,6 @@
 {
   "name": "easynode",
-  "description": "web ssh",
+  "description": "A cross-platform Linux server management panel with WebSSH, SFTP, RDP, Docker, AI chat, and batch operations.",
   "private": true,
   "workspaces": [
     "server",
@@ -12,10 +12,10 @@
     "url": "git+https://github.com/chaos-zhu/easynode.git"
   },
   "keywords": [
-    "vps",
-    "node",
+    "web ssh",
+    "android ssh",
+    "ios ssh",
     "easynode",
-    "chaos",
     "chaoszhu"
   ],
   "author": "chaoszhu",
